@@ -95,7 +95,7 @@ class ChatSpeech2SpeechSession:
         if not self.allow_vad_eot and sender == "vad":
             return
         self.agent_can_speak = True
-        await self.agent_speak()
+        asyncio.create_task(self.agent_speak)
 
     async def agent_speak(self):
         transcript = self.transcript
@@ -124,17 +124,15 @@ class ChatSpeech2SpeechSession:
         )
 
         chatbot_response = ""
-        chat_messages_partial = None
+        chat_messages = self.chat_messages
         while True:
             message_partial = await chatbot_text_output_stream.read(10)
             if not message_partial:
                 break
+            await text2speech_text_input_stream.write(message_partial)
             chatbot_response += message_partial
-            chat_messages_partial = self.chatbot.add_agent_message(self.chat_messages, chatbot_response)
+            self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
             # await self.event_bus.emit(EventEnum.UPDATE_CHAT_MESSAGES, chat_messages_partial)
-
-        if chat_messages_partial:
-            self.chat_messages = chat_messages_partial
 
     async def process_chunk(self, chunk):
         vad_results, self.vad_states = await self.vad.process(samples=chunk, prev_states=self.vad_states)
@@ -152,12 +150,14 @@ class ChatSpeech2SpeechSession:
         if (
             self.unvoiced_bytes_to_eot > 0
             and len(self.data) - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
+            and not self.agent_can_speak
         ):
             await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
         elif (
             self.voiced_bytes_to_interrupt > 0
             and len(self.data) == self.voiced_segments[-1]["end"]
             and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
+            and self.agent_can_speak
         ):
             await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
 
@@ -188,11 +188,3 @@ class ChatSpeech2SpeechSession:
             self.transcripts.remove(outdated_transcript)
         self.transcripts.append((start, end, text))
         self.transcripts.sort(key=lambda x: x[0])
-        # self.event_bus.emit(EventEnum.UPDATE_TRANSCRIPT, self.transcript)
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=Path)
-    args = parser.parse_args()
-    config = yaml.safe_load(args.config.read_text())

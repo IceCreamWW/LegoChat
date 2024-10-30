@@ -7,11 +7,14 @@ from legochat.components import Component, register_component
 @register_component("paraformer")
 class ParaformerComponent(Component):
     def __init__(self, punctuation=False):
+        self.punctuation = punctuation
+
+    def setup(self):
         self.speech2text_model = Paraformer(
             "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch", batch_size=1, quantize=True
         )
         self.punctuation_model = (
-            CT_Transformer("damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch") if punctuation else None
+            CT_Transformer("damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch") if self.punctuation else None
         )
 
     def process_func(

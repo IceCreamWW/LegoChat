@@ -1,4 +1,7 @@
 import logging
+import os
+
+os.environ["MODELSCOPE_LOG_LEVEL"] = str(logging.ERROR)
 import re
 import time
 
@@ -25,7 +28,7 @@ class SamBertHiFiGanComponent(Component):
         self.wav_header_length = 44
         self.sample_rate = 16000
 
-    def build(self):
+    def setup(self):
         self.tts = pipeline(task=Tasks.text_to_speech, model=self.model_name)
         self.tts("启动")
 

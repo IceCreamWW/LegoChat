@@ -18,7 +18,6 @@ class AudioOutputStream:
 
 class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
     def __init__(self, fifo_path=None, sample_rate_in=16000, sample_rate_out=16000):
-
         self.sample_rate_in = sample_rate_in
         self.sample_rate_out = sample_rate_out
 
@@ -31,9 +30,10 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
 
+        fd = os.open(self.fifo_path, os.O_RDWR | os.O_NONBLOCK)
         # Open separate file descriptors for reading and writing
-        self.fifo_r = open(self.fifo_path, "rb")
-        self.fifo_w = open(self.fifo_path, "wb")
+        self.fifo_w = open(fd, "wb")
+        self.fifo_r = open(fd, "rb")
 
     async def read(self, size: int = -1):
         return await asyncio.to_thread(self.fifo_r.read, size)
@@ -56,7 +56,7 @@ class M3U8AudioOutputStream(AudioOutputStream):
         self.m3u8_path = m3u8_path
 
         if not fifo_path:
-            self.fifo_path = tempfile.mktemp()
+            fifo_path = tempfile.mktemp()
         self.fifo_path = Path(self.fifo_path)
         self.fifo = None
         self.ffmpeg_cmd = ["ffmpeg", "-f", "s16le"]
@@ -98,18 +98,16 @@ class FIFOTextIOStream:
         # Create the FIFO if it does not exist
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
-
         # Open separate file descriptors for reading and writing
-        self.fifo_r = open(self.fifo_path, "r")
-        self.fifo_w = open(self.fifo_path, "w")
+        fd = os.open(self.fifo_path, os.O_RDWR | os.O_NONBLOCK)
+        # Open separate file descriptors for reading and writing
+        self.fifo_w = open(fd, "w")
+        self.fifo_r = open(fd, "r")
 
     async def read(self, size: int = -1):
         return await asyncio.to_thread(self.fifo_r.read, size)
 
     async def write(self, data):
-        if self.sample_rate_in != self.sample_rate_out:
-            data = resample_audio_bytes(data, self.sample_rate_in, self.sample_rate_out)
-
         await asyncio.to_thread(self.fifo_w.write, data)
         await asyncio.to_thread(self.fifo_w.flush)  # Ensure the data is flushed
 
@@ -117,3 +115,21 @@ class FIFOTextIOStream:
         """Close both read and write file descriptors."""
         self.fifo_r.close()
         self.fifo_w.close()
+
+
+if __name__ == "__main__":
+
+    async def main():
+        text_stream = FIFOTextIOStream()
+        await text_stream.write("Hello1!")
+        await text_stream.write("Hello2!")
+        await text_stream.write("Hello3!")
+        await text_stream.write("Hello4!")
+
+        while True:
+            data = await text_stream.read(1024)
+            if not data:
+                break
+            print(data)
+
+    asyncio.run(main())

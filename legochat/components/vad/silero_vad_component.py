@@ -16,7 +16,8 @@ class SileroVADComponent(Component):
     def __init__(self):
         pass
 
-    def build(self):
+    def setup(self):
+        logging.info("Loading Silero VAD model")
         model = load_silero_vad(onnx=True)
         sample_rate = 16000
         self.vad_iterator = VADIterator(model, sampling_rate=sample_rate)

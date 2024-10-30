@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import types
 from multiprocessing import Pipe, Queue
@@ -6,13 +7,17 @@ from pathlib import Path
 
 class Component:
 
-    async def process(self, *args, **kwargs):
+    async def process(self, **kwargs):
         parent_conn, child_conn = Pipe()
         self.queue.put((kwargs, child_conn))
-        result = await parent_conn.recv()
+        result = await asyncio.to_thread(parent_conn.recv)
         return result
 
+    def setup(self):
+        raise NotImplementedError
+
     def run(self, queue):
+        self.setup()
         self.queue = queue
         while True:
             item = queue.get()
@@ -23,7 +28,7 @@ class Component:
             pipe.send(result)
 
     @classmethod
-    def build(cls, component_cls_name, params):
+    def from_config(cls, component_cls_name, params):
         queue = Queue()
         component_cls = get_component_cls(component_cls_name)
         component = component_cls(**params)

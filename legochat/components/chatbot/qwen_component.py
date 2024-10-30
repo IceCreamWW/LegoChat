@@ -29,7 +29,7 @@ class QwenComponent(Component):
     def __init__(self, model_name="Qwen/Qwen2.5-7B-Instruct"):
         self.model_name = model_name
 
-    def build(self):
+    def setup(self):
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype="auto", device_map="auto")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 

@@ -101,9 +101,9 @@
                     audio.pause();
                     audio.src = ''; // Unset source to handle invalidation
                 }
-                
                 agentCanSpeak = canSpeak;
             }, 1000);
+        }
 
         async function pollAgentCanSpeak() {
             // Periodically check if the agent can speak and update status
