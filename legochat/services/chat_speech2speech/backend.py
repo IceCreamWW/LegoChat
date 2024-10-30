@@ -25,8 +25,7 @@ class ChatSpeech2Speech(Service):
     async def start_session(self, **session_kwargs):
         session = ChatSpeech2SpeechSession(self, **session_kwargs)
         self.sessions[session.session_id] = session
-        asyncio.create_task(session.run())
-        return session
+        await session.run()
 
 
 class ChatSpeech2SpeechSession:
@@ -45,8 +44,7 @@ class ChatSpeech2SpeechSession:
         for component in service.required_components:
             setattr(self, component, service.components[component])
 
-        if not workspace:
-            self.workspace = Path(tempfile.TemporaryDirectory().name)
+        self.workspace = Path(tempfile.TemporaryDirectory().name) if not workspace else Path(workspace)
         self.workspace.mkdir(parents=True, exist_ok=True)
 
         self.data = b""
@@ -71,16 +69,19 @@ class ChatSpeech2SpeechSession:
         self.allow_vad_eot = allow_vad_eot
 
         self.event_bus = EventBus()
-        self.agent_can_speak = True
+        self.agent_can_speak = False
         self.event_bus.on(EventEnum.INTERRUPT, self.on_interrupt)
         self.event_bus.on(EventEnum.END_OF_TURN, self.on_end_of_turn)
 
     async def run(self):
-        while True:
-            chunk = await self.user_audio_input_stream.read(1024)
-            if not chunk:
-                break
-            self.process_chunk(chunk)
+        with open("test.raw", "wb") as f:
+            while True:
+                chunk = await self.user_audio_input_stream.read(2048)
+                if not chunk:
+                    break
+                await self.process_chunk(chunk)
+                f.write(chunk)
+                f.flush()
 
     async def on_interrupt(self, sender="user"):
         if not self.allow_vad_interrupt and sender == "vad":
@@ -144,6 +145,8 @@ class ChatSpeech2SpeechSession:
             elif "end" in result:
                 self.voiced_segments[-1]["end"] = result["end"] * 2
         self.data += chunk
+        return
+
         if self.voiced_segments and "end" not in self.voiced_segments[-1]:
             self.voiced_segments[-1]["end"] = len(self.data)
 

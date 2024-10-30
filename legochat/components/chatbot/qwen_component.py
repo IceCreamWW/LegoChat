@@ -34,7 +34,7 @@ class QwenComponent(Component):
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
     @property
-    def system_message(self):
+    def system_prompt(self):
         messages = [
             {
                 "role": "system",

@@ -31,16 +31,16 @@ class SileroVADComponent(Component):
     ):
         if prev_states:
             samples = prev_states["buffer_samples"] + samples
-            self.states = prev_states
+            self.states = prev_states["vad"]
         else:
             self.vad_iterator.reset_states()
         samples = torch.frombuffer(samples, dtype=torch.int16).float() / 32768.0
 
-        states = {}
+        states = {"buffer_samples": b""}
         results = []
         for i in range(0, len(samples), self.window_size_samples):
             if not end_of_stream and i + self.window_size_samples > len(samples):
-                states["buffer_samples"] = samples[i:]
+                states["buffer_samples"] = (samples[i:].numpy() * 32768.0).astype(np.int16).tobytes()
                 break
 
             chunk = samples[i : i + self.window_size_samples]
@@ -90,4 +90,3 @@ if __name__ == "__main__":
     component = SileroVADComponent()
     results, states = component.process(data, None, True)
     print(results)
-    breakpoint()
