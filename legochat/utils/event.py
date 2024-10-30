@@ -49,10 +49,4 @@ class EventBus:
 
 
 class EventEnum(Enum):
-    RECORDING_START = "recording_start"
-    RECORDING_END = "recording_end"
-
-    SPEECH2TEXT_UPDATE = "speech2text_update"
-
-
-global_event_bus = EventBus()
+    END_OF_TURN = "end_of_turn"

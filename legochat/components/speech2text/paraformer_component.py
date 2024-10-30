@@ -14,7 +14,7 @@ class ParaformerComponent(Component):
             CT_Transformer("damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch") if punctuation else None
         )
 
-    def process(
+    def process_func(
         self,
         samples: bytes,
         prev_states: dict = None,

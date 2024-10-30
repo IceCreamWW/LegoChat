@@ -14,12 +14,15 @@ from silero_vad.utils_vad import VADIterator
 @register_component("silero_vad")
 class SileroVADComponent(Component):
     def __init__(self):
+        pass
+
+    def build(self):
         model = load_silero_vad(onnx=True)
         sample_rate = 16000
         self.vad_iterator = VADIterator(model, sampling_rate=sample_rate)
         self.window_size_samples = 512
 
-    def process(
+    def process_func(
         self,
         samples: bytes,
         prev_states: dict = None,

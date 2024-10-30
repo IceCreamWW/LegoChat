@@ -1,23 +1,32 @@
 import types
+from multiprocessing import Pipe, Queue
 
 
 class Component:
 
-    def process(self):
-        raise NotImplementedError
+    async def process(self, *args, **kwargs):
+        parent_conn, child_conn = Pipe()
+        self.queue.put((kwargs, child_conn))
+        result = await parent_conn.recv()
+        return result
 
-    def start_worker(self):
+    def run(self, queue):
+        self.queue = queue
         while True:
-            item = self.queue.get()
+            item = queue.get()
             if item is None:
                 break
-            params, pipe = item
-            result = self.process(**params)
-            if isinstance(result, types.GeneratorType):
-                for item in result:
-                    pipe.send(item)
-            else:
-                pipe.send(result)
+            process_kwargs, pipe = item
+            result = self.process_func(**process_kwargs)
+            pipe.send(result)
+
+
+def build_and_run_component(cls, params, pipe):
+    queue = Queue()
+    component = cls(**params)
+    component.queue = queue
+    Process(target=component.run, args=(queue,)).start()
+    return
 
 
 component2cls = {}
