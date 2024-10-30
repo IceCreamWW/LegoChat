@@ -1,0 +1,10 @@
+components:
+  vad: 
+    name: silero_vad
+  speech2text:
+    name: paraformer
+  chatbot:
+    name: qwen
+  text2speech:
+    name: sambert_hifigan
+  

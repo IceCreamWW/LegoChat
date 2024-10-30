@@ -1,8 +1,7 @@
 import asyncio
+import logging
 from enum import Enum
 from typing import Callable, Dict, List
-
-from legochat.utils.logger import logger
 
 
 class Event:
@@ -45,7 +44,7 @@ class EventBus:
             if event_name in self.events:
                 await self.events[event_name].trigger(*args, **kwargs)
         except Exception as e:
-            logger.exception(e)
+            logging.exception(e)
 
 
 class EventEnum(Enum):

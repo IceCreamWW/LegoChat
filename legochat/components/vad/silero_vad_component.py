@@ -6,7 +6,7 @@ from typing import Dict
 import numpy as np
 import onnxruntime
 import torch
-from legochat.components import register_component
+from legochat.components import Component, register_component
 from silero_vad import load_silero_vad
 from silero_vad.utils_vad import VADIterator
 

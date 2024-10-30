@@ -1,0 +1,1 @@
+from .silero_vad_component import SileroVADComponent

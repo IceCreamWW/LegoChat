@@ -7,29 +7,29 @@ from typing import Optional
 from uuid import uuid4
 
 import yaml
-from legochat.components import VAD, Chatbot, Speech2Text, Text2Speech
 from legochat.services.service import Service
 from legochat.utils.event import EventBus, EventEnum
 from legochat.utils.stream import (AudioInputStream, AudioOutputStream,
-                                   PipeTextIOStream)
+                                   FIFOTextIOStream)
 
 
 class ChatSpeech2Speech(Service):
     def __init__(self, config):
         super().__init__(config)
+        self.sessions = {}
 
     @property
     def required_components(self):
         return ["vad", "speech2text", "chatbot", "text2speech"]
 
     async def start_session(self, **session_kwargs):
-        session = Session(self, **session_kwargs)
-        self.sessions.append(session)
+        session = ChatSpeech2SpeechSession(self, **session_kwargs)
+        self.sessions[session.session_id] = session
         asyncio.create_task(session.run())
         return session
 
 
-class Session:
+class ChatSpeech2SpeechSession:
     def __init__(
         self,
         service,
@@ -77,7 +77,7 @@ class Session:
 
     async def run(self):
         while True:
-            chunk = await self.audio_stream.read(1024)
+            chunk = await self.user_audio_input_stream.read(1024)
             if not chunk:
                 break
             self.process_chunk(chunk)
@@ -172,7 +172,7 @@ class Session:
     @property
     def speech(self):
         data = b""
-        for segment in voiced_segments:
+        for segment in self.voiced_segments:
             data += self.data[segment["start"] : segment["end"]]
 
     async def update_transcript(self, start, end, text):

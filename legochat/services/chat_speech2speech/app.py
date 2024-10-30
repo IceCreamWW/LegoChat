@@ -5,14 +5,15 @@ from uuid import uuid4
 import ffmpeg
 import yaml
 from flask import Flask, g, jsonify, request, send_from_directory
-from legochat.utils.stream import FifoAudioIOStream, M3U8AudioOutputStream
+from legochat.utils.stream import FIFOAudioIOStream, M3U8AudioOutputStream
 
 from backend import ChatSpeech2Speech
 
 app = Flask(__name__)
 
-config = yaml.safe_load(Path(__file__).parent / "config.yaml")
-service = ChatSpeech2Speech(config)
+config = yaml.safe_load((Path(__file__).parent / "config.yaml").read_text())
+g.service = ChatSpeech2Speech(config)
+g.service.run()
 
 
 @app.route("/create_session")
@@ -23,7 +24,7 @@ async def init():
 
     session_id = uuid4().hex
     workspace = Path(f"workspace/{session_id}")
-    user_audio_input_stream = FifoAudioIOStream()
+    user_audio_input_stream = FIFOAudioIOStream()
     agent_audio_output_stream = M3U8AudioOutputStream(
         workspace / "agent" / "playlist.m3u8",
     )
@@ -88,4 +89,6 @@ async def end_of_turn(session_id):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # uvicorn.run(app, host="127.0.0.1", port=8000)
+    # run in debug mode
+    uvicorn.run(app, host="0.0.0.0", port=8000, debug=True)
