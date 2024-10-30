@@ -1,9 +1,11 @@
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import ffmpeg
 import yaml
 from flask import Flask, g, jsonify, request, send_from_directory
+from legochat.utils.stream import FifoAudioIOStream, M3U8AudioOutputStream
 
 from backend import ChatSpeech2Speech
 
@@ -15,7 +17,25 @@ service = ChatSpeech2Speech(config)
 
 @app.route("/create_session")
 async def init():
-    return "init"
+    allow_vad_interrupt = request.args.get("allow_vad_interrupt", True)
+    allow_vad_eot = request.args.get("allow_vad_eot", True)
+    sample_rate = int(request.args.get("sample_rate", 16000))  # default to 16kHz if not specified
+
+    session_id = uuid4().hex
+    workspace = Path(f"workspace/{session_id}")
+    user_audio_input_stream = FifoAudioIOStream()
+    agent_audio_output_stream = M3U8AudioOutputStream(
+        workspace / "agent" / "playlist.m3u8",
+    )
+    session = g.service.create_session(
+        session_id=session_id,
+        workspace=workspace,
+        user_audio_input_stream=user_audio_input_stream,
+        agent_audio_output_stream=agent_audio_output_stream,
+        allow_vad_interrupt=allow_vad_interrupt,
+        allow_vad_eot=allow_vad_eot,
+    )
+    return session.session_id
 
 
 @app.route("/<session_id>/agent_can_speak")
@@ -47,11 +67,22 @@ def chat_messages(session_id):
 
 
 @app.route("/<session_id>/user_audio", methods=["POST"])
-def user_audio(session_id):
-    audio_stream = ffmpeg.input("pipe:0")
-    audio_stream = ffmpeg.output(audio_stream, g.service.sessions[session_id].user_audio_input_stream)
-    ffmpeg.run(audio_stream, input=request.stream.read())
+async def user_audio(session_id):
+    data = request.data
+    await g.service.sessions[session_id].user_audio_input_stream.write(data)
     return "OK"
+
+
+@app.route("/<session_id>/interrupt", methods=["POST"])
+async def interrupt(session_id):
+    await g.service.sessions[session_id].event_bus.trigger_event(EventEnum.INTERRUPT, sender="user")
+    return "Interrupted", 200
+
+
+@app.route("/<session_id>/end_of_turn", methods=["POST"])
+async def end_of_turn(session_id):
+    await g.service.sessions[session_id].event_bus.trigger_event(EventEnum.END_OF_TURN, sender="user")
+    return "End of Turn Noted", 200
 
 
 if __name__ == "__main__":

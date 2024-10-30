@@ -40,7 +40,7 @@ class EventBus:
         if event_name in self.events:
             self.events[event_name].remove_handler(handler)
 
-    async def trigger_event(self, event_name: str, *args, **kwargs):
+    async def emit(self, event_name: str, *args, **kwargs):
         try:
             if event_name in self.events:
                 await self.events[event_name].trigger(*args, **kwargs)
@@ -50,3 +50,4 @@ class EventBus:
 
 class EventEnum(Enum):
     END_OF_TURN = "end_of_turn"
+    INTERRUPT = "interrupt"

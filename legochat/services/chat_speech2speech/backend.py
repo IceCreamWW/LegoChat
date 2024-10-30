@@ -11,7 +11,7 @@ from legochat.components import VAD, Chatbot, Speech2Text, Text2Speech
 from legochat.services.service import Service
 from legochat.utils.event import EventBus, EventEnum
 from legochat.utils.stream import (AudioInputStream, AudioOutputStream,
-                                   TextOutputStream)
+                                   PipeTextIOStream)
 
 
 class ChatSpeech2Speech(Service):
@@ -22,16 +22,11 @@ class ChatSpeech2Speech(Service):
     def required_components(self):
         return ["vad", "speech2text", "chatbot", "text2speech"]
 
-    async def start_session(self, audio_stream):
-        session_id = uuid4().hex
-        session = Session(
-            self,
-            session_id,
-            audio_stream,
-        )
+    async def start_session(self, **session_kwargs):
+        session = Session(self, **session_kwargs)
         self.sessions.append(session)
         asyncio.create_task(session.run())
-        return session_id
+        return session
 
 
 class Session:
@@ -41,6 +36,7 @@ class Session:
         session_id,
         user_audio_input_stream: AudioInputStream,
         agent_audio_output_stream: AudioOutputStream,
+        workspace: Optional[Path] = None,
         voiced_seconds_to_interrupt: float = -1,
         unvoiced_seconds_to_eot: float = -1,
         allow_vad_interrupt: bool = True,
@@ -49,7 +45,8 @@ class Session:
         for component in service.required_components:
             setattr(self, component, service.components[component])
 
-        self.workspace = Path(tempfile.TemporaryDirectory().name)
+        if not workspace:
+            self.workspace = Path(tempfile.TemporaryDirectory().name)
         self.workspace.mkdir(parents=True, exist_ok=True)
 
         self.data = b""
@@ -66,8 +63,6 @@ class Session:
 
         self.user_audio_input_stream = user_audio_input_stream
         self.agent_audio_output_stream = agent_audio_output_stream
-        self.user_text_output_stream = user_text_output_stream
-        self.agent_text_output_stream = agent_text_output_stream
 
         self.voiced_bytes_to_interrupt = int(voiced_seconds_to_interrupt * self.sample_rate) * 2
         self.unvoiced_bytes_to_eot = int(unvoiced_seconds_to_eot * self.sample_rate) * 2
@@ -82,7 +77,7 @@ class Session:
 
     async def run(self):
         while True:
-            chunk = await self.audio_stream.read()
+            chunk = await self.audio_stream.read(1024)
             if not chunk:
                 break
             self.process_chunk(chunk)
@@ -110,7 +105,7 @@ class Session:
         self.text2speech_controller = Queue()
 
         self.chat_messages = self.chatbot.add_user_message(self.chat_messages, transcript)
-        chatbot_text_output_stream = TextIOStream()
+        chatbot_text_output_stream = FIFOTextIOStream()
         asyncio.create_task(
             self.chatbot.process(
                 chat_messages=self.chat_messages,
@@ -119,11 +114,11 @@ class Session:
             )
         )
 
-        text2speech_text_input_stream = PipeTextIOStream()
+        text2speech_text_input_stream = FIFOTextIOStream()
         asyncio.create_task(
             self.text2speech.process(
-                text_fifo_path=text2speech_text_input_stream.text_fifo_path.as_posix(),
-                audio_fifo_path=self.agent_audio_output_stream.audio_fifo_path.as_posix(),
+                text_fifo_path=text2speech_text_input_stream.fifo_path.as_posix(),
+                audio_fifo_path=self.agent_audio_output_stream.fifo_path.as_posix(),
                 control_pipe=self.text2speech_controller,
             )
         )
@@ -131,12 +126,12 @@ class Session:
         chatbot_response = ""
         chat_messages_partial = None
         while True:
-            message_partial = await chatbot_text_output_stream.read()
+            message_partial = await chatbot_text_output_stream.read(10)
             if not message_partial:
                 break
             chatbot_response += message_partial
             chat_messages_partial = self.chatbot.add_agent_message(self.chat_messages, chatbot_response)
-            # await self.event_bus.trigger_event(EventEnum.UPDATE_CHAT_MESSAGES, chat_messages_partial)
+            # await self.event_bus.emit(EventEnum.UPDATE_CHAT_MESSAGES, chat_messages_partial)
 
         if chat_messages_partial:
             self.chat_messages = chat_messages_partial
@@ -158,13 +153,13 @@ class Session:
             self.unvoiced_bytes_to_eot > 0
             and len(self.data) - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
         ):
-            await self.event_bus.trigger_event(EventEnum.END_OF_TURN, sender="vad")
+            await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
         elif (
             self.voiced_bytes_to_interrupt > 0
             and len(self.data) == self.voiced_segments[-1]["end"]
             and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
         ):
-            await self.event_bus.trigger_event(EventEnum.INTERRUPT, sender="vad")
+            await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
 
         start, end = self.voiced_segments[-1]["start"], self.voiced_segments[-1]["end"]
         text = await self.speech2text.process(data)
@@ -193,7 +188,7 @@ class Session:
             self.transcripts.remove(outdated_transcript)
         self.transcripts.append((start, end, text))
         self.transcripts.sort(key=lambda x: x[0])
-        # self.event_bus.trigger_event(EventEnum.UPDATE_TRANSCRIPT, self.transcript)
+        # self.event_bus.emit(EventEnum.UPDATE_TRANSCRIPT, self.transcript)
 
 
 if __name__ == "__main__":

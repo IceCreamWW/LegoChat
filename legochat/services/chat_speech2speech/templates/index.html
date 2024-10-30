@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech to Speech Chatbot</title>
+    <style>
+        /* Simple styling for better readability */
+        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #controls, #transcript, #chat-messages { width: 100%; max-width: 600px; margin: 10px; }
+        button { padding: 10px 15px; margin: 5px; }
+        #transcript, #chat-messages { border: 1px solid #ddd; padding: 10px; border-radius: 5px; }
+        .chat-message { margin: 5px 0; padding: 8px; border-radius: 4px; }
+        .user-message { background-color: #e1f5fe; }
+        .assistant-message { background-color: #fff9c4; }
+    </style>
+</head>
+<body>
+    <h1>Speech to Speech Chatbot</h1>
+    <div id="controls">
+        <label><input type="checkbox" id="allow_vad_interrupt" checked> Allow VAD Interrupt</label><br>
+        <label><input type="checkbox" id="allow_vad_eot" checked> Allow VAD End of Turn</label><br>
+        <button id="startSession">Start Session</button>
+        <button id="interrupt">Interrupt Agent</button>
+        <button id="endOfTurn">End of Turn</button>
+    </div>
+    
+    <div id="transcript">
+        <h3>Transcript</h3>
+        <pre id="transcriptText"></pre>
+    </div>
+    
+    <div id="chat-messages">
+        <h3>Chat Messages</h3>
+        <div id="messages"></div>
+    </div>
+
+    <script>
+        let sessionId = '';
+        let audioContext, mediaStream, audioSource, processor;
+        let agentCanSpeak = false;
+        
+        async function startSession() {
+            const allowVadInterrupt = document.getElementById('allow_vad_interrupt').checked;
+            const allowVadEot = document.getElementById('allow_vad_eot').checked;
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const sampleRate = audioContext.sampleRate;
+
+            const response = await fetch(`/create_session?allow_vad_interrupt=${allowVadInterrupt}&allow_vad_eot=${allowVadEot}&sample_rate=${sampleRate}`);
+            sessionId = await response.text();
+
+            initializeAudio();
+            pollAgentCanSpeak();
+            pollTranscript();
+            pollChatMessages();
+        }
+
+        async function initializeAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const sampleRate = audioContext.sampleRate;
+
+            // Start microphone stream
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioSource = audioContext.createMediaStreamSource(mediaStream);
+            
+            // Configure processor for sending audio data
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+            audioSource.connect(processor);
+            processor.connect(audioContext.destination);
+
+            // Send audio bytes to backend
+            processor.onaudioprocess = async (event) => {
+                const audioData = event.inputBuffer.getChannelData(0);
+                const int16Data = new Int16Array(audioData.length);
+                for (let i = 0; i < audioData.length; i++) {
+                    int16Data[i] = Math.min(1, audioData[i]) * 32767;
+                }
+                await fetch(`/${sessionId}/user_audio`, {
+                    method: 'POST',
+                    body: int16Data
+                });
+            };
+
+            // Initialize audio playback object for m3u8 stream
+            let audio = new Audio();
+            audio.loop = true;
+
+            // Monitor agent's speak status and reload m3u8 when necessary
+            setInterval(async () => {
+                const response = await fetch(`/${sessionId}/agent_can_speak`);
+                const canSpeak = await response.json();
+                
+                if (canSpeak && !agentCanSpeak) {
+                    // Agent can now speak: reload m3u8 and play
+                    audio.src = `/${sessionId}/agent/playlist.m3u8?time=${Date.now()}`; // Bypass caching
+                    audio.load();
+                    audio.play();
+                } else if (!canSpeak && agentCanSpeak) {
+                    // Agent cannot speak: stop audio
+                    audio.pause();
+                    audio.src = ''; // Unset source to handle invalidation
+                }
+                
+                agentCanSpeak = canSpeak;
+            }, 1000);
+
+        async function pollAgentCanSpeak() {
+            // Periodically check if the agent can speak and update status
+            setInterval(async () => {
+                const response = await fetch(`/${sessionId}/agent_can_speak`);
+                agentCanSpeak = await response.json();
+            }, 1000);
+        }
+
+        async function pollTranscript() {
+            // Periodically update the transcript from backend
+            setInterval(async () => {
+                const response = await fetch(`/${sessionId}/transcript`);
+                const transcript = await response.json();
+                document.getElementById('transcriptText').innerText = transcript;
+            }, 1000);
+        }
+
+        async function pollChatMessages() {
+            // Periodically update chat messages from backend
+            setInterval(async () => {
+                const response = await fetch(`/${sessionId}/chat_messages`);
+                const messages = await response.json();
+                const messagesContainer = document.getElementById('messages');
+                messagesContainer.innerHTML = '';
+
+                messages.forEach(msg => {
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = `chat-message ${msg.role}-message`;
+                    msgDiv.innerText = `${msg.role}: ${msg.content}`;
+                    messagesContainer.appendChild(msgDiv);
+                });
+            }, 1000);
+        }
+
+        // Button actions
+        document.getElementById('startSession').addEventListener('click', startSession);
+        document.getElementById('interrupt').addEventListener('click', () => fetch(`/${sessionId}/interrupt`, { method: 'POST' }));
+        document.getElementById('endOfTurn').addEventListener('click', () => fetch(`/${sessionId}/end_of_turn`, { method: 'POST' }));
+    </script>
+</body>
+</html>
+

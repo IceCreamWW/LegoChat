@@ -73,7 +73,7 @@ class QwenComponent(Component):
         thread.start()
 
         response = ""
-        with open(text_fifo_path, "w") as text_fifo:
+        with open(text_fifo_path, "w") as fifo:
             for response_partial in streamer:
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
@@ -81,8 +81,8 @@ class QwenComponent(Component):
                         streamer._stop_event.set()
                         thread.join()
                         break
-                text_fifo.write(response_partial)
-                text_fifo.flush()
+                fifo.write(response_partial)
+                fifo.flush()
                 response += response_partial
 
         return response
