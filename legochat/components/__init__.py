@@ -7,10 +7,10 @@ from pathlib import Path
 
 class Component:
 
-    async def process(self, **kwargs):
+    def process(self, **kwargs):
         parent_conn, child_conn = Pipe()
         self.queue.put((kwargs, child_conn))
-        result = await asyncio.to_thread(parent_conn.recv)
+        result = parent_conn.recv()
         return result
 
     def setup(self):

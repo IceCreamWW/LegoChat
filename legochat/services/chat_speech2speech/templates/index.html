@@ -117,7 +117,7 @@
                 const response = await fetch(`/${sessionId}/transcript`);
                 const transcript = await response.json();
                 document.getElementById('transcriptText').innerText = transcript;
-            }, 1000);
+            }, 100);
         }
 
         async function pollChatMessages() {

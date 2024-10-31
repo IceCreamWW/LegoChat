@@ -70,18 +70,32 @@ class ChatSpeech2SpeechSession:
 
         self.event_bus = EventBus()
         self.agent_can_speak = False
+        self.user_is_speaking = False
+        self.event_bus.on(EventEnum.RECEIVE_ADUIO_CHUNK, self.on_receive_audio_chunk)
+        self.event_bus.on(EventEnum.UPDATE_VOICED_SEGMENTS, self.on_update_voiced_segments)
         self.event_bus.on(EventEnum.INTERRUPT, self.on_interrupt)
         self.event_bus.on(EventEnum.END_OF_TURN, self.on_end_of_turn)
 
+        self.last_vad_end = 0
+        self.last_speech2text_end = 0
+
     async def run(self):
-        with open("test.raw", "wb") as f:
+        asyncio.create_task(self.detect_speech())
+        try:
             while True:
                 chunk = await self.user_audio_input_stream.read(2048)
                 if not chunk:
                     break
-                await self.process_chunk(chunk)
-                f.write(chunk)
-                f.flush()
+                await self.event_bus.emit(EventEnum.RECEIVE_ADUIO_CHUNK, chunk)
+        except Exception as e:
+            traceback.print_exc()
+
+    async def on_receive_audio_chunk(self, chunk: bytes):
+        self.data += chunk
+        await self.detect_speech()
+
+    async def on_update_voiced_segments(self):
+        asyncio.create_task(self.transcribe())
 
     async def on_interrupt(self, sender="user"):
         if not self.allow_vad_interrupt and sender == "vad":
@@ -97,6 +111,78 @@ class ChatSpeech2SpeechSession:
             return
         self.agent_can_speak = True
         asyncio.create_task(self.agent_speak)
+
+    async def detect_speech(self):
+        chunk = self.data[self.last_vad_end:]
+        if not chunk:
+            return
+
+        self.last_vad_end = len(self.data)
+        vad_results, self.vad_states = await asyncio.to_thread(self.vad.process, samples=chunk, prev_states=self.vad_states)
+        voice_segments_updated = False
+        for result in vad_results:
+            if "start" in result:
+                self.user_is_speaking = True
+                if self.voiced_segments and self.voiced_segments[-1]["end"] >= result["start"] * 2:
+                    continue
+                self.voiced_segments.append({"start": result["start"] * 2})
+            elif "end" in result:
+                self.user_is_speaking = False
+                self.voiced_segments[-1]["end"] = result["end"] * 2
+            voice_segments_updated = True
+
+        if self.user_is_speaking:
+            self.voiced_segments[-1]["end"] = self.last_vad_end
+            voice_segments_updated = True
+
+        if voice_segments_updated:
+            await self.event_bus.emit(EventEnum.UPDATE_VOICED_SEGMENTS)
+
+        if (
+            self.unvoiced_bytes_to_eot > 0
+            and self.last_vad_end - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
+            and not self.agent_can_speak
+        ):
+            await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
+        elif (
+            self.voiced_bytes_to_interrupt > 0
+            and self.last_vad_end == self.voiced_segments[-1]["end"]
+            and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
+            and self.agent_can_speak
+        ):
+            await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
+
+    async def transcribe(self):
+        start, end = self.voiced_segments[0]["start"], self.voiced_segments[-1]["end"]
+        text, _ = await asyncio.to_thread(self.speech2text.process, samples=self.speech)
+        self.last_speech2text_end = end
+        self.update_transcript(start, end, text)
+        print(text)
+
+    @property
+    def transcript(self):
+        return "".join([transcript[2] for transcript in self.transcripts])
+
+    @property
+    def speech(self):
+        data = b""
+        for segment in self.voiced_segments:
+            data += self.data[segment["start"] : segment["end"]]
+        return data
+
+    def update_transcript(self, start, end, text):
+        outdated_transcripts = []
+        for start_, end_, text_ in self.transcripts:
+            if start >= start_ and end <= end_:
+                return None
+            elif start <= start_ and end >= end_:
+                outdated_transcripts.append((start_, end_, text_))
+            elif start_ < start < end_ or start_ < end < end_:
+                raise ValueError("Overlapping transcripts")
+        for outdated_transcript in outdated_transcripts:
+            self.transcripts.remove(outdated_transcript)
+        self.transcripts.append((start, end, text))
+        self.transcripts.sort(key=lambda x: x[0])
 
     async def agent_speak(self):
         transcript = self.transcript
@@ -135,59 +221,3 @@ class ChatSpeech2SpeechSession:
             self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
             # await self.event_bus.emit(EventEnum.UPDATE_CHAT_MESSAGES, chat_messages_partial)
 
-    async def process_chunk(self, chunk):
-        vad_results, self.vad_states = await self.vad.process(samples=chunk, prev_states=self.vad_states)
-        for result in vad_results:
-            if "start" in result:
-                if self.voiced_segments and self.voiced_segments[-1]["end"] >= result["start"] * 2:
-                    continue
-                self.voiced_segments.append({"start": result["start"] * 2})
-            elif "end" in result:
-                self.voiced_segments[-1]["end"] = result["end"] * 2
-        self.data += chunk
-        return
-
-        if self.voiced_segments and "end" not in self.voiced_segments[-1]:
-            self.voiced_segments[-1]["end"] = len(self.data)
-
-        if (
-            self.unvoiced_bytes_to_eot > 0
-            and len(self.data) - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
-            and not self.agent_can_speak
-        ):
-            await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
-        elif (
-            self.voiced_bytes_to_interrupt > 0
-            and len(self.data) == self.voiced_segments[-1]["end"]
-            and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
-            and self.agent_can_speak
-        ):
-            await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
-
-        start, end = self.voiced_segments[-1]["start"], self.voiced_segments[-1]["end"]
-        text = await self.speech2text.process(data)
-        await self.update_transcript(start, end, text)
-
-    @property
-    def transcript(self):
-        return "".join([transcript[2] for transcript in self.transcripts])
-
-    @property
-    def speech(self):
-        data = b""
-        for segment in self.voiced_segments:
-            data += self.data[segment["start"] : segment["end"]]
-
-    async def update_transcript(self, start, end, text):
-        outdated_transcripts = []
-        for start_, end_, _ in self.transcripts:
-            if start >= start_ and end <= end_:
-                return None
-            elif start <= start_ and end >= end_:
-                outdated_transcripts.append((start, end, text))
-            elif start_ < start < end_ or start_ < end < end_:
-                raise ValueError("Overlapping transcripts")
-        for outdated_transcript in outdated_transcripts:
-            self.transcripts.remove(outdated_transcript)
-        self.transcripts.append((start, end, text))
-        self.transcripts.sort(key=lambda x: x[0])

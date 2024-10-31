@@ -30,6 +30,7 @@ class QwenComponent(Component):
         self.model_name = model_name
 
     def setup(self):
+        return
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype="auto", device_map="auto")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 

@@ -12,6 +12,9 @@ import threading
 
 from backend import ChatSpeech2Speech
 
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+
 background_loop = asyncio.new_event_loop()
 def start_background_loop(loop):
     asyncio.set_event_loop(loop)

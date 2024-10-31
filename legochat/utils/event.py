@@ -48,5 +48,7 @@ class EventBus:
 
 
 class EventEnum(Enum):
+    RECEIVE_ADUIO_CHUNK = "receive_audio_chunk"
+    UPDATE_VOICED_SEGMENTS = "update_voiced_segments"
     END_OF_TURN = "end_of_turn"
     INTERRUPT = "interrupt"

@@ -29,6 +29,7 @@ class SamBertHiFiGanComponent(Component):
         self.sample_rate = 16000
 
     def setup(self):
+        return
         self.tts = pipeline(task=Tasks.text_to_speech, model=self.model_name)
         self.tts("启动")
 
