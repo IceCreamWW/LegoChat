@@ -31,10 +31,8 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
 
-        if "w" in mode and "r" in mode:
+        if "w" in mode:
             rw_flag = os.O_RDWR
-        elif "w" in mode:
-            rw_flag = os.O_WRONLY
         elif "r" in mode:
             rw_flag = os.O_RDONLY
         else:
@@ -121,10 +119,7 @@ class FIFOTextIOStream:
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
 
-        if "w" in mode and "r" in mode:
-            rw_flag = os.O_RDWR
-        elif "w" in mode:
-            rw_flag = os.O_WRONLY
+        if "w" in mode:
             rw_flag = os.O_RDWR
         elif "r" in mode:
             rw_flag = os.O_RDONLY
@@ -211,4 +206,5 @@ if __name__ == "__main__":
 
         await task
 
-    asyncio.run(main_text())
+    # asyncio.run(main_text())
+    FIFOTest = FIFOTextIOStream(mode="w")
