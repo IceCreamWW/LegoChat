@@ -34,10 +34,31 @@ class SamBertHiFiGanComponent(Component):
         self.tts("启动")
 
     def process_func(self, text_fifo_path, audio_fifo_path, control_pipe=None):
+        fd_text = os.open(text_fifo_path, os.O_RDWR | os.O_NONBLOCK)
+        with open(fd_text, "r") as fifo_text:
+            text_partial = fifo_text.read(5)
+            if not text_partial:
+                return
+            if control_pipe and control_pipe.poll():
+                signal = control_pipe.recv()
+                if signal == "interrupt":
+                    print("text2speech received interrupt signal")
+                    return
+            print("text2speech received text_partial: ", text_partial)
+            time.sleep(1)
+        os.close(fd_text)
+        return 0
+
         text = ""
         with open(text_fifo_path, "r") as fifo_text, open(audio_fifo_path, "wb") as fifo_audio:
             while True:
-                text_partial = fifo_text.read()
+                text_partial = fifo_text.read(5)
+                if not text_partial:
+                    break
+                if control_pipe and control_pipe.poll():
+                    signal = control_pipe.recv()
+                    if signal == "interrupt":
+                        break
                 text += text_partial
                 tts_text, text = extract_tts_text(text)
                 if tts_text:

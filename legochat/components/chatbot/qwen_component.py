@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 import time
 
@@ -60,6 +61,24 @@ class QwenComponent(Component):
         text_fifo_path,
         control_pipe=None,
     ):
+        print("I'm processing")
+        response = "测试用这个回复" * 100
+        #         print("trying to open fd")
+        #         fd = os.open(text_fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+        #         print("trying to open fifo")
+        with open(text_fifo_path, "w") as fifo:
+            for c in response:
+                print("writing", c)
+                fifo.write(c)
+                fifo.flush()
+                time.sleep(0.5)
+                if control_pipe and control_pipe.poll():
+                    signal = control_pipe.recv()
+                    if signal == "interrupt":
+                        print("chatbot received interrupt signal")
+                        break
+        return response
+
         text = self.tokenizer.apply_chat_template(
             messages,
             tokenize=False,
@@ -78,7 +97,7 @@ class QwenComponent(Component):
             for response_partial in streamer:
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
-                    if signal == "stop":
+                    if signal == "interrupt":
                         streamer._stop_event.set()
                         thread.join()
                         break

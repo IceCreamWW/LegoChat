@@ -1,7 +1,8 @@
 import argparse
 import asyncio
+import logging
 import tempfile
-from multiprocessing import Queue
+from multiprocessing import Pipe
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -102,23 +103,28 @@ class ChatSpeech2SpeechSession:
             return
         self.agent_can_speak = False
         if self.chatbot_controller:
-            self.chatbot_controller.put("interrupt")
+            self.chatbot_controller.send("interrupt")
         if self.text2speech_controller:
-            self.text2speech_controller.put("interrupt")
+            self.text2speech_controller.send("interrupt")
 
-    async def on_end_of_turn(self, sender="user"):
+    def on_end_of_turn(self, sender="user"):
+        print(f"end of turn received from {sender}")
         if not self.allow_vad_eot and sender == "vad":
             return
+        if self.agent_can_speak:
+            return
         self.agent_can_speak = True
-        asyncio.create_task(self.agent_speak)
+        asyncio.create_task(self.agent_speak())
 
     async def detect_speech(self):
-        chunk = self.data[self.last_vad_end:]
+        chunk = self.data[self.last_vad_end :]
         if not chunk:
             return
 
         self.last_vad_end = len(self.data)
-        vad_results, self.vad_states = await asyncio.to_thread(self.vad.process, samples=chunk, prev_states=self.vad_states)
+        vad_results, self.vad_states = await asyncio.to_thread(
+            self.vad.process, samples=chunk, prev_states=self.vad_states
+        )
         voice_segments_updated = False
         for result in vad_results:
             if "start" in result:
@@ -157,7 +163,7 @@ class ChatSpeech2SpeechSession:
         text, _ = await asyncio.to_thread(self.speech2text.process, samples=self.speech)
         self.last_speech2text_end = end
         self.update_transcript(start, end, text)
-        print(text)
+        logging.info(f"Transcription from {start} to {end}: {text}")
 
     @property
     def transcript(self):
@@ -188,32 +194,46 @@ class ChatSpeech2SpeechSession:
         transcript = self.transcript
         self.voiced_segments = []
         self.transcripts = []
-        self.chatbot_controller = Queue()
-        self.text2speech_controller = Queue()
+        self.chatbot_controller, chatbot_controller_child = Pipe()
+        self.text2speech_controller, text2speech_controller_child = Pipe()
 
         self.chat_messages = self.chatbot.add_user_message(self.chat_messages, transcript)
-        chatbot_text_output_stream = FIFOTextIOStream()
+        chatbot_text_output_stream = FIFOTextIOStream(mode="r")
+
         asyncio.create_task(
-            self.chatbot.process(
-                chat_messages=self.chat_messages,
-                text_fifo_path=chatbot_text_output_stream.text_fifo_path.as_posix(),
-                control_pipe=self.chatbot_controller,
+            asyncio.to_thread(
+                self.chatbot.process,
+                messages=self.chat_messages,
+                text_fifo_path=chatbot_text_output_stream.fifo_path.as_posix(),
+                control_pipe=chatbot_controller_child,
             )
         )
 
-        text2speech_text_input_stream = FIFOTextIOStream()
+        # asyncio.create_task(asyncio.to_thread(test, chatbot_text_output_stream.fifo_path.as_posix()))
+        while True:
+            print("waiting for chatbot response")
+            data = await chatbot_text_output_stream.read(1)
+            if not data:
+                break
+            print("received ", data)
+        return
+
+        text2speech_text_input_stream = FIFOTextIOStream(mode="rw")
         asyncio.create_task(
-            self.text2speech.process(
+            asyncio.to_thread(
+                self.text2speech.process,
                 text_fifo_path=text2speech_text_input_stream.fifo_path.as_posix(),
                 audio_fifo_path=self.agent_audio_output_stream.fifo_path.as_posix(),
-                control_pipe=self.text2speech_controller,
+                control_pipe=text2speech_controller_child,
             )
         )
 
         chatbot_response = ""
         chat_messages = self.chat_messages
         while True:
-            message_partial = await chatbot_text_output_stream.read(10)
+            print("receving")
+            message_partial = await chatbot_text_output_stream.read(5)
+            print("read message partial", message_partial)
             if not message_partial:
                 break
             await text2speech_text_input_stream.write(message_partial)
@@ -221,3 +241,15 @@ class ChatSpeech2SpeechSession:
             self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
             # await self.event_bus.emit(EventEnum.UPDATE_CHAT_MESSAGES, chat_messages_partial)
 
+
+def test(text_fifo_path):
+    import time
+
+    print("TESTING")
+    response = "测试用这个回复" * 100
+    with open(text_fifo_path, "w") as fifo:
+        for c in response:
+            print("writing", c)
+            fifo.write(c)
+            fifo.flush()
+            time.sleep(0.5)
