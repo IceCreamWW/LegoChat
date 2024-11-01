@@ -51,8 +51,8 @@ def start_session():
     workspace = Path(f"workspace/{session_id}")
     workspace.mkdir(parents=True, exist_ok=True)
 
-    user_audio_stream = FIFOAudioIOStream(mode="rw", sample_rate_w=sample_rate, sample_rate_r=16000)
-    agent_audio_output_stream = FIFOAudioIOStream(mode="c", sample_rate_w=service.text2speech.sample_rate)
+    user_audio_stream = FIFOAudioIOStream(sample_rate_w=sample_rate, sample_rate_r=16000)
+    agent_audio_output_stream = FIFOAudioIOStream(sample_rate_w=service.text2speech.sample_rate)
 
     # Start session asynchronously
     asyncio.run_coroutine_threadsafe(

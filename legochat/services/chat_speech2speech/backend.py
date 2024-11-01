@@ -233,7 +233,7 @@ class ChatSpeech2SpeechSession:
         self.chat_messages = self.chatbot.add_user_message(self.chat_messages, transcript)
 
         # chatbot => chatbot_response_stream => text2speech_source_stream => text2speech
-        chatbot_response_stream = FIFOTextIOStream(mode="r")
+        chatbot_response_stream = FIFOTextIOStream()
         asyncio.create_task(
             asyncio.to_thread(
                 self.chatbot.process,
@@ -243,7 +243,7 @@ class ChatSpeech2SpeechSession:
             )
         )
 
-        text2speech_source_stream = FIFOTextIOStream(mode="w")
+        text2speech_source_stream = FIFOTextIOStream()
         asyncio.create_task(
             asyncio.to_thread(
                 self.text2speech.process,

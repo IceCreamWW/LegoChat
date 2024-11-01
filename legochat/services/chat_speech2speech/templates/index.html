@@ -92,7 +92,7 @@
         async function pollAgentCanSpeak() {
             // Initialize audio playback object for m3u8 stream
             let audio = new Audio();
-            audio.loop = true;
+            audio.loop = false;
             let hls;
 
             // Monitor agent's speak status and reload m3u8 when necessary

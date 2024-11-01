@@ -57,34 +57,3 @@ class SamBertHiFiGanComponent(Component):
                 fifo_audio.write(wav_bytes[self.wav_header_length :])
         logger.info("SamBert-HiFi-GAN process finished")
         return 0
-
-
-if __name__ == "__main__":
-    import os
-    import threading
-    from pathlib import Path
-
-    fifo_path = Path("/tmp/my_fifo")
-    # Create a FIFO
-    if fifo_path.exists():
-        fifo_path.unlink()
-    os.mkfifo(fifo_path)
-
-    def reader():
-        with open(fifo_path, "r") as fifo:
-            while True:
-                data = fifo.readline()
-                if not data:
-                    break
-                print(data)
-
-    def writer():
-        with open(fifo_path, "w") as fifo:
-            for i in range(3):
-                fifo.write(f"Hello from writer: {i}!\n")
-                fifo.flush()
-                time.sleep(2)
-
-    # Start both reader and writer threads
-    threading.Thread(target=reader).start()
-    threading.Thread(target=writer).start()

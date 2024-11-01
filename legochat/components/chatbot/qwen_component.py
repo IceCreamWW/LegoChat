@@ -63,9 +63,11 @@ class QwenComponent(Component):
         text_fifo_path,
         control_pipe=None,
     ):
+        print("in chatbot")
         response = "测试用这个回复," * 5
         with open(text_fifo_path, "w") as fifo:
             for c in response:
+                print("sending", c)
                 fifo.write(c)
                 fifo.flush()
                 time.sleep(0.01)
