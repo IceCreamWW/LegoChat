@@ -14,6 +14,8 @@
         .user-message { background-color: #e1f5fe; }
         .assistant-message { background-color: #fff9c4; }
     </style>
+    <!-- Include hls.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
     <h1>Speech to Speech Chatbot</h1>
@@ -91,6 +93,7 @@
             // Initialize audio playback object for m3u8 stream
             let audio = new Audio();
             audio.loop = true;
+            let hls;
 
             // Monitor agent's speak status and reload m3u8 when necessary
             setInterval(async () => {
@@ -98,12 +101,29 @@
                 const { agent_can_speak } = await response.json();
                 
                 if (agent_can_speak && !agentCanSpeak) {
-                    // Agent can now speak: reload m3u8 and play
-                    audio.src = `/${sessionId}/agent/playlist.m3u8?time=${Date.now()}`; // Bypass caching
-                    audio.load();
-                    audio.play();
+                    const m3u8Url = `/${sessionId}/assets/agent.m3u8?time=${Date.now()}`; // Bypass caching
+                    if (Hls.isSupported()) {
+                        if (hls) {
+                            hls.destroy();
+                        }
+                        hls = new Hls();
+                        hls.loadSource(m3u8Url);
+                        hls.attachMedia(audio);
+                        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                            audio.play();
+                        });
+                    } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+                        // For Safari
+                        audio.src = m3u8Url;
+                        audio.play();
+                    } else {
+                        console.error('This browser does not support HLS.');
+                    }
                 } else if (!agent_can_speak && agentCanSpeak) {
-                    // Agent cannot speak: stop audio
+                    if (hls) {
+                        hls.destroy();
+                        hls = null;
+                    }
                     audio.pause();
                     audio.src = ''; // Unset source to handle invalidation
                 }

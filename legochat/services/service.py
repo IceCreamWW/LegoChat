@@ -9,6 +9,8 @@ class Service:
             if name not in config["components"]:
                 raise ValueError(f"Missing required component: {name}")
         self.components = self.build_components(config["components"])
+        for component in self.required_components:
+            setattr(self, component, self.components[component])
 
     @property
     def required_components(self):

@@ -1,26 +1,59 @@
 import asyncio
+import errno
 import fcntl
+import logging
 import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 from scipy.signal import resample
 
+logger = logging.getLogger("legochat")
+
 
 class AudioInputStream:
-    pass
+    async def read(self, size: int = -1):
+        raise NotImplementedError
 
 
 class AudioOutputStream:
-    pass
+    async def write(self, data):
+        raise NotImplementedError
 
 
 class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
-    def __init__(self, fifo_path=None, mode="rw", sample_rate_in=16000, sample_rate_out=16000):
-        self.sample_rate_in = sample_rate_in
-        self.sample_rate_out = sample_rate_out
+    """
+    A class for reading and writing audio data to a FIFO file.
+    Attributes:
+        mode (str): Mode for the FIFO file. Can be 'c', r', 'w', or 'rw'. Mode 'c' creates the fifo without managing it \
+                If mode is 'w', then the stream will not be readable and "read from fifo" should be managed separately, see examples.
+        fifo_path (str): Path to the FIFO file.
+        sample_rate_r (int): Sample rate of the output audio stream. 
+        sample_rate_w (int): Sample rate of the input audio stream. If sample_rate_w is specified, the input audio stream will be resampled from sample_rate_w to sample_rate_r.
+    Examples:
+        >>> stream = FIFOAudioIOStream(sample_rate_w=44100, sample_rate_r=16000)
+        >>> await stream.write(audio_data)
+        >>> data = await stream.read()
+
+        Use "w" mode and manage fifo read separately:
+        >>> stream = FIFOAudioIOStream(mode="w")
+        >>> await stream.write(audio_data)
+        >>> with open(stream.fifo_path, "r") as fifo:
+        >>>     data = fifo.read()
+    """
+
+    def __init__(
+        self,
+        fifo_path: Optional[str | Path] = None,
+        mode: str = "rw",
+        sample_rate_r: int = None,
+        sample_rate_w: int = None,
+    ):
+        self.sample_rate_r = sample_rate_r
+        self.sample_rate_w = sample_rate_w
 
         # Set up the FIFO path
         if not fifo_path:
@@ -31,23 +64,22 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
 
+        assert mode in ["r", "w", "rw", "c"]
+        if "r" in mode:
+            fd_r = os.open(self.fifo_path, os.O_RDONLY | os.O_NONBLOCK)
+            fcntl.fcntl(fd_r, fcntl.F_SETPIPE_SZ, 1048576)
+            self.fifo_r = os.fdopen(fd_r, "rb")
+            assert self.sample_rate_r, "sample_rate_r is required for 'r' mode"
+
         if "w" in mode:
-            rw_flag = os.O_RDWR
-        elif "r" in mode:
-            rw_flag = os.O_RDONLY
-        else:
-            raise ValueError(f"Invalid mode {mode}")
-
-        fd = os.open(self.fifo_path, rw_flag | os.O_NONBLOCK)
-        fcntl.fcntl(fd, fcntl.F_SETPIPE_SZ, 1048576)
-
-        # Open separate file descriptors for reading and writing
-        self.fifo_w = open(fd, "wb") if "w" in mode else None
-        self.fifo_r = open(fd, "rb") if "r" in mode else None
+            fd_w = os.open(self.fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+            fcntl.fcntl(fd_w, fcntl.F_SETPIPE_SZ, 1048576)
+            self.fifo_w = os.fdopen(fd_w, "wb")
+            assert self.sample_rate_w, "sample_rate_w is required for 'w' mode"
 
     async def read(self, size: int = -1):
         if not self.fifo_r:
-            raise ValueError("Stream is not readable")
+            raise ValueError("Reading from fifo is not managed by this stream.")
         while True:
             data = await asyncio.to_thread(self.fifo_r.read, size)
             if not data:
@@ -59,44 +91,38 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
 
     async def write(self, data):
         if not self.fifo_w:
-            raise ValueError("Stream is not writable")
-        if self.sample_rate_in != self.sample_rate_out:
-            data = resample_audio_bytes(data, self.sample_rate_in, self.sample_rate_out)
+            raise ValueError("Writing to fifo is not managed by this stream.")
+
+        if self.sample_rate_r and self.sample_rate_w != self.sample_rate_r:
+            data = resample_audio_bytes(data, self.sample_rate_w, self.sample_rate_r)
 
         await asyncio.to_thread(self.fifo_w.write, data)
-        await asyncio.to_thread(self.fifo_w.flush)  # Ensure the data is flushed
+        await asyncio.to_thread(self.fifo_w.flush)
 
-    def close(self):
-        """Close both read and write file descriptors."""
-        self.fifo_r.close()
-        self.fifo_w.close()
-
-
-class M3U8AudioOutputStream(AudioOutputStream):
-    def __init__(self, m3u8_path, fifo_path=None):
-        self.m3u8_path = m3u8_path
-
-        self.fifo_path = tempfile.mktemp() if not fifo_path else fifo_path
-        self.fifo_path = Path(self.fifo_path)
-        self.fifo = None
+    def stream_to_m3u8(self, m3u8_path, sample_rate=16000):
+        m3u8_path = Path(m3u8_path)
+        m3u8_path.parent.mkdir(parents=True, exist_ok=True)
         self.ffmpeg_cmd = ["ffmpeg", "-f", "s16le"]
-        self.ffmpeg_cmd.extend(["-ar", "16k"])
+        self.ffmpeg_cmd.extend(["-v", "error"])
+        self.ffmpeg_cmd.extend(["-ar", str(self.sample_rate_w)])
         self.ffmpeg_cmd.extend(["-ac", "1"])
         self.ffmpeg_cmd.extend(["-i", self.fifo_path.as_posix()])
         self.ffmpeg_cmd.extend(["-c:a", "aac"])
         self.ffmpeg_cmd.extend(["-b:a", "192k"])
+        self.ffmpeg_cmd.extend(["-ar", str(sample_rate)])
         self.ffmpeg_cmd.extend(["-f", "hls"])
         self.ffmpeg_cmd.extend(["-hls_time", "4"])
         self.ffmpeg_cmd.extend(["-hls_list_size", "0"])
         self.ffmpeg_cmd.extend(["-hls_playlist_type", "event"])
         self.ffmpeg_cmd.extend([m3u8_path.as_posix()])
+        print(" ".join(self.ffmpeg_cmd))
+        subprocess.Popen(self.ffmpeg_cmd)
 
-    async def write(self, data):
-        if not self.fifo_path.exists() or self.fifo is None or self.fifo.closed:
-            os.mkfifo(self.fifo_path)
-            self.fifo = open(self.fifo_path, "wb")
-            subprocess.Popen(self.ffmpeg_cmd)
-        await asyncio.to_thread(self.fifo.write, data)
+    def close(self):
+        if self.fifo_r:
+            self.fifo_r.close()
+        if self.fifo_w:
+            self.fifo_w.close()
 
 
 def resample_audio_bytes(audio_bytes, original_sample_rate=44100, target_sample_rate=16000):
@@ -119,40 +145,75 @@ class FIFOTextIOStream:
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
 
+        self.fifo_r_fd = self.fifo_w_fd = None
         if "w" in mode:
-            rw_flag = os.O_RDWR
-        elif "r" in mode:
-            rw_flag = os.O_RDONLY
-        else:
-            raise ValueError(f"Invalid mode {mode}")
-
-        fd = os.open(self.fifo_path, rw_flag | os.O_NONBLOCK)
-        # Open separate file descriptors for reading and writing
-        self.fifo_w = os.fdopen(fd, "w") if "w" in mode else None
-        self.fifo_r = os.fdopen(fd, "r") if "r" in mode else None
+            try:
+                self.fifo_w_fd = os.open(self.fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+            except OSError as e:
+                if e.errno == errno.ENXIO:
+                    self.fifo_w_fd = -1
+                    logger.warning(f"Postponed opening of {self.fifo_path} for writing since no reader is opening it.")
+                else:
+                    raise
+        if "r" in mode:
+            self.fifo_r_fd = os.open(self.fifo_path, os.O_RDONLY | os.O_NONBLOCK)
+            self.writer_never_opened = True
+            self.buffer_read = b""
 
     async def read(self, size: int = -1):
-        if not self.fifo_r:
+        if not self.fifo_r_fd:
             raise ValueError("Stream is not readable")
         while True:
-            data = await asyncio.to_thread(self.fifo_r.read, size)
-            if not data:
-                if self.fifo_r.closed:
-                    break
-                await asyncio.sleep(0.1)
-                continue
-            return data
+            try:
+                data = await asyncio.to_thread(os.read, self.fifo_r_fd, size)
+                if len(data) == 0:
+                    # EOF or no writer is opening
+                    if self.writer_never_opened:
+                        await asyncio.sleep(0.1)
+                        continue
+                    else:
+                        break
+                self.buffer_read += data
+                text, bytes_decoded = "", 0
+                try:
+                    text = self.buffer_read.decode("u8")
+                    self.buffer_read = b""
+                except UnicodeDecodeError as e:
+                    # Partial character, keep self.buffer_read and try again
+                    bytes_decoded = e.start
+                    text = self.buffer_read[:bytes_decoded].decode("u8")
+                    self.buffer_read = self.buffer_read[bytes_decoded:]
+                if text:
+                    return text
+            except OSError as e:
+                if e.errno == errno.EAGAIN:
+                    # no data available yet, but there is writer opening
+                    self.writer_never_opened = False
+                    await asyncio.sleep(0.1)
+                    continue
+                raise e
 
     async def write(self, data):
-        if not self.fifo_w:
+        if not self.fifo_w_fd:
             raise ValueError("Stream is not writable")
-        await asyncio.to_thread(self.fifo_w.write, data)
-        await asyncio.to_thread(self.fifo_w.flush)  # Ensure the data is flushed
+        if self.fifo_w_fd == -1:
+            while True:
+                try:
+                    self.fifo_w_fd = os.open(self.fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+                    break
+                except OSError as e:
+                    if e.errno == errno.ENXIO:
+                        await asyncio.sleep(0.1)
+                        continue
+                    else:
+                        raise
+        await asyncio.to_thread(os.write, self.fifo_w_fd, data.encode("u8"))
 
     def close(self):
-        """Close both read and write file descriptors."""
-        self.fifo_r.close()
-        self.fifo_w.close()
+        if self.fifo_w_fd and self.fifo_w_fd != -1:
+            os.close(self.fifo_w_fd)
+        if self.fifo_r_fd:
+            os.close(self.fifo_r_fd)
 
 
 if __name__ == "__main__":
@@ -160,34 +221,29 @@ if __name__ == "__main__":
     from multiprocessing import Process
 
     async def main_text():
-        fifo_path = Path("/tmp/my_fifo")
-        fifo_path.unlink(missing_ok=True)
-        os.mkfifo(fifo_path)
-        fd = os.open(fifo_path, os.O_RDONLY | os.O_NONBLOCK)
-        fifo_r = os.fdopen(fd, "r")
+        text_stream = FIFOTextIOStream(mode="w")
+
+        response = "你好" * 10
+
+        import time
 
         def test(text_fifo_path):
-            import time
 
-            print("TESTING")
-            response = "测试用这个回复" * 100
-            with open(text_fifo_path, "w") as fifo:
-                for c in response:
-                    print("writing", c)
-                    fifo.write(c)
-                    fifo.flush()
-                    time.sleep(0.5)
+            with open(text_fifo_path, "r") as fifo:
+                while True:
+                    data = fifo.read(5)
+                    if len(data) == 0:
+                        break
+                    print(data)
+            print("text stream read finished")
 
-        asyncio.create_task(asyncio.to_thread(test, fifo_path.as_posix()))
+        Process(target=test, args=(text_stream.fifo_path.as_posix(),)).start()
 
-        while True:
-            data = await asyncio.to_thread(fifo_r.read, 1)
-            if not data:
-                if fifo_r.closed:
-                    break
-                await asyncio.sleep(0.1)
-                continue
-            print("received data", data)
+        for c in response:
+            await text_stream.write(c)
+            time.sleep(0.1)
+        text_stream.close()
+        print("text stream closed")
 
     async def main_audio():
 
@@ -199,12 +255,11 @@ if __name__ == "__main__":
                 print(len(data))
 
         task = asyncio.create_task(read_audio())
-        stream = FIFOAudioIOStream(sample_rate_in=48000, sample_rate_out=16000)
+        stream = FIFOAudioIOStream(sample_rate_w=48000, sample_rate_r=16000)
         await stream.write(8192 * b"\x00")
         await stream.write(8192 * b"\x00")
         await stream.write(8192 * b"\x00")
 
         await task
 
-    # asyncio.run(main_text())
-    FIFOTest = FIFOTextIOStream(mode="w")
+    asyncio.run(main_text())

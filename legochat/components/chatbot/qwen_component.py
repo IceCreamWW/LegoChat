@@ -7,6 +7,8 @@ from legochat.components import Component, register_component
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           TextIteratorStreamer)
 
+logger = logging.getLogger("legochat")
+
 
 class StoppableTextIteratorStreamer(TextIteratorStreamer):
     class Interrupt(Exception):
@@ -61,22 +63,18 @@ class QwenComponent(Component):
         text_fifo_path,
         control_pipe=None,
     ):
-        print("I'm processing")
-        response = "测试用这个回复" * 100
-        #         print("trying to open fd")
-        #         fd = os.open(text_fifo_path, os.O_WRONLY | os.O_NONBLOCK)
-        #         print("trying to open fifo")
+        response = "测试用这个回复," * 5
         with open(text_fifo_path, "w") as fifo:
             for c in response:
-                print("writing", c)
                 fifo.write(c)
                 fifo.flush()
-                time.sleep(0.5)
+                time.sleep(0.01)
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
                     if signal == "interrupt":
-                        print("chatbot received interrupt signal")
+                        logger.info("chatbot received interrupt signal")
                         break
+        logger.info("chatbot sent all response")
         return response
 
         text = self.tokenizer.apply_chat_template(
@@ -111,11 +109,11 @@ class QwenComponent(Component):
         try:
             self.model.generate(**kwargs)
         except StoppableTextIteratorStreamer.Interrupt as e:
-            logging.info(e)
+            logger.info(e)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logger.basicConfig(level=logging.INFO)
     prompt = "简单介绍一下音频-文本大模型"
     messages = [
         {

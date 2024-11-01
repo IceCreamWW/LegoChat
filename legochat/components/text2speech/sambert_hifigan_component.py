@@ -10,6 +10,8 @@ from modelscope.outputs import OutputKeys
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 
+logger = logging.getLogger("legochat")
+
 
 def extract_tts_text(text):
     punctuation = r"[，。！？,.!?]"
@@ -29,26 +31,11 @@ class SamBertHiFiGanComponent(Component):
         self.sample_rate = 16000
 
     def setup(self):
-        return
         self.tts = pipeline(task=Tasks.text_to_speech, model=self.model_name)
         self.tts("启动")
+        logger.info("SamBert-HiFi-GAN model loaded")
 
     def process_func(self, text_fifo_path, audio_fifo_path, control_pipe=None):
-        fd_text = os.open(text_fifo_path, os.O_RDWR | os.O_NONBLOCK)
-        with open(fd_text, "r") as fifo_text:
-            text_partial = fifo_text.read(5)
-            if not text_partial:
-                return
-            if control_pipe and control_pipe.poll():
-                signal = control_pipe.recv()
-                if signal == "interrupt":
-                    print("text2speech received interrupt signal")
-                    return
-            print("text2speech received text_partial: ", text_partial)
-            time.sleep(1)
-        os.close(fd_text)
-        return 0
-
         text = ""
         with open(text_fifo_path, "r") as fifo_text, open(audio_fifo_path, "wb") as fifo_audio:
             while True:
@@ -62,11 +49,13 @@ class SamBertHiFiGanComponent(Component):
                 text += text_partial
                 tts_text, text = extract_tts_text(text)
                 if tts_text:
+                    logger.info(f"tts_text: {tts_text}")
                     wav_bytes = self.tts(input=tts_text)[OutputKeys.OUTPUT_WAV]
                     fifo_audio.write(wav_bytes[self.wav_header_length :])
             if text:
                 wav_bytes = self.tts(input=text)[OutputKeys.OUTPUT_WAV]
                 fifo_audio.write(wav_bytes[self.wav_header_length :])
+        logger.info("SamBert-HiFi-GAN process finished")
         return 0
 
 

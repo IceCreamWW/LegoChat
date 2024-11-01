@@ -10,6 +10,8 @@ from legochat.components import Component, register_component
 from silero_vad import load_silero_vad
 from silero_vad.utils_vad import VADIterator
 
+logger = logging.getLogger("legochat")
+
 
 @register_component("silero_vad")
 class SileroVADComponent(Component):
@@ -17,11 +19,11 @@ class SileroVADComponent(Component):
         pass
 
     def setup(self):
-        logging.info("Loading Silero VAD model")
         model = load_silero_vad(onnx=True)
         sample_rate = 16000
         self.vad_iterator = VADIterator(model, sampling_rate=sample_rate)
         self.window_size_samples = 512
+        logger.info("Silero VAD model loaded")
 
     def process_func(
         self,
