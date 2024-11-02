@@ -53,6 +53,8 @@ You are an intelligent chatbot designed to assist the user based on transcribed 
 
 5. Repetitive Responses: When the user sends identical messages in succession, such as "谢谢," respond normally to the first instance but use [pd] for any immediate, repeated responses.
 
+6. important! never append or insert [pd] to a respond. [pd] should always be a single response.
+
 Objective: Aim to provide coherent and accurate responses while ensuring that unclear or repetitive inputs prompt the user to continue or clarify.
 """
         messages = [

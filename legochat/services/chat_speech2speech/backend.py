@@ -25,8 +25,8 @@ if env_file.exists():
 SPEECH2TEXT_MIN_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_SECONDS", "0.2"))
 SPEECH2TEXT_MAX_SECONDS = float(os.getenv("SPEECH2TEXT_MAX_SECONDS", "5.0"))
 SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_INTERVAL_SECONDS", "0.2"))
-VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.5"))
-UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "1.0"))
+VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.3"))
+UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.6"))
 
 
 class ChatSpeech2Speech(Service):
@@ -45,11 +45,12 @@ class ChatSpeech2Speech(Service):
         await session.run()
 
     async def heartbeat(self, session_id):
-        self.sessions[session_id].is_alive = False
         while True:
+            self.sessions[session_id].is_alive = False
             await asyncio.sleep(10)
             if not self.sessions[session_id].is_alive:
                 break
+        logger.info(f"Session {session_id} ended")
         del self.sessions[session_id]
 
 
@@ -152,16 +153,8 @@ class ChatSpeech2SpeechSession:
         transcript = self.transcript
         if not transcript.strip():
             return
-        last_voiced_segment = self.voiced_segments[-1]
-        self.voiced_segments.clear()
-        self.transcripts.clear()
 
-        # handle manual EOT when VAD has not detect eos yet
-        if not last_voiced_segment["eos"]:
-            self.voiced_segments.append(
-                {"start": last_voiced_segment["end"], "end": last_voiced_segment["end"], "eos": False}
-            )
-
+        self.clear_transcript()
         self.agent_audio_output_stream.reset()
         self.agent_can_speak = True
         asyncio.create_task(self.agent_speak(transcript))
@@ -256,6 +249,19 @@ class ChatSpeech2SpeechSession:
         self.transcripts.append((start, end, text))
         self.transcripts.sort(key=lambda x: x[0])
 
+    def clear_transcript(self):
+        if not self.voiced_segments:
+            return
+        last_voiced_segment = self.voiced_segments[-1]
+        self.voiced_segments.clear()
+        self.transcripts.clear()
+
+        # handle manual EOT when VAD has not detect eos yet
+        if not last_voiced_segment["eos"]:
+            self.voiced_segments.append(
+                {"start": last_voiced_segment["end"], "end": last_voiced_segment["end"], "eos": False}
+            )
+
     async def agent_speak(self, transcript):
         self.chatbot_controller, chatbot_controller_child = Pipe()
         self.text2speech_controller, text2speech_controller_child = Pipe()
@@ -292,10 +298,11 @@ class ChatSpeech2SpeechSession:
                     break
                 chatbot_response += message_partial
                 self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
-                if self.chatbot.pending_token and self.chatbot.pending_token in chatbot_response:
+                if self.chatbot.pending_token and self.chatbot.pending_token == chatbot_response.strip():
                     await text2speech_source_stream.write(" ")  # prevent reading fifo from blocking
                     self.agent_can_speak = False
                     break
+
                 await text2speech_source_stream.write(message_partial)
             except Exception as e:
                 logger.error(e)

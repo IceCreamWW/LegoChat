@@ -72,9 +72,13 @@ def start_session():
     return jsonify({"session_id": session_id})
 
 
-@app.route("/<session_id>/test")
-async def test_write_audio(session_id):
-    await service.sessions[session_id].agent_audio_output_stream.write(8192 * b"\x00")
+@app.route("/<session_id>/update_setting", methods=["POST"])
+def update_setting(session_id):
+    args = request.json
+    if args["setting"] == "allow_vad_interrupt":
+        service.sessions[session_id].allow_vad_interrupt = args["value"]
+    elif args["setting"] == "allow_vad_eot":
+        service.sessions[session_id].allow_vad_eot = args["value"]
     return "OK"
 
 
@@ -84,9 +88,15 @@ def agent_can_speak(session_id):
     return jsonify({"agent_can_speak": can_speak})
 
 
-@app.route("/<session_id>/agent_finished_speaking")
+@app.route("/<session_id>/agent_finished_speaking", methods=["POST"])
 def agent_finished_speaking(session_id):
     service.sessions.get(session_id).agent_can_speak = False
+    return "OK"
+
+
+@app.route("/<session_id>/clear_transcript", methods=["POST"])
+def clear_transcript(session_id):
+    service.sessions[session_id].clear_transcript()
     return "OK"
 
 
@@ -101,6 +111,7 @@ def get_session_file(session_id, filename):
 
 @app.route("/<session_id>/transcript")
 def transcript(session_id):
+    service.sessions[session_id].is_alive = True
     transcript = service.sessions[session_id].transcript
     return jsonify(transcript)
 
@@ -114,13 +125,12 @@ def chat_messages(session_id):
 @app.route("/<session_id>/user_audio", methods=["POST"])
 async def user_audio(session_id):
     data = request.data
-    service.sessions[session_id].is_alive = True
     await service.sessions[session_id].user_audio_input_stream.write(data)
     return "OK", 200
 
 
-@app.route("/total_sessions", methods=["POST"])
-async def total_sessions(session_id):
+@app.route("/total_sessions")
+async def total_sessions():
     return jsonify({"total_sessions": len(service.sessions)})
 
 
