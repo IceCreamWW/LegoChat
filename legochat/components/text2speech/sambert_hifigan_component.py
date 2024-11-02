@@ -45,6 +45,7 @@ class SamBertHiFiGanComponent(Component):
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
                     if signal == "interrupt":
+                        logger.debug("SamBert-HiFi-GAN process interrupted")
                         break
                 text += text_partial
                 tts_text, text = extract_tts_text(text)

@@ -47,7 +47,8 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         self.m3u8_path = Path(m3u8_path) if m3u8_path else None
         self.fifo_path = Path(fifo_path) if fifo_path else Path(tempfile.mktemp())
         self.fifo_r = self.fifo_w = None
-        self.reset(False)
+        self.stream_process = None
+        self.reset()
 
     async def read(self, size: int = -1):
         if not self.fifo_r:
@@ -70,19 +71,20 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         await asyncio.to_thread(self.fifo_w.flush)
         return size
 
-    def reset(self, stream=True):
+    def reset(self, start_streaming=True):
         self.close()
         self.fifo_r = self.fifo_w = None
 
         if not self.fifo_path.exists():
             os.mkfifo(self.fifo_path)
 
-        if self.m3u8_path and stream:
+        if self.stream_process:
+            self.stream_process.terminate()
+            self.stream_process = None
+
+        if self.m3u8_path and start_streaming:
             self.m3u8_path.parent.mkdir(parents=True, exist_ok=True)
             self.m3u8_path.unlink(missing_ok=True)
-            # remove *.ts
-            for ts in self.m3u8_path.parent.glob("*.ts"):
-                ts.unlink()
             self.stream_to_m3u8(self.m3u8_path)
 
     def stream_to_m3u8(self, m3u8_path, sample_rate=16000):
@@ -102,7 +104,7 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         self.ffmpeg_cmd.extend(["-hls_playlist_type", "event"])
         self.ffmpeg_cmd.extend([m3u8_path.as_posix()])
         logger.debug(" ".join(self.ffmpeg_cmd))
-        subprocess.Popen(self.ffmpeg_cmd)
+        self.stream_process = subprocess.Popen(self.ffmpeg_cmd)
 
     def close(self):
         if self.fifo_r:

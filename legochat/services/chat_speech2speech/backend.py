@@ -287,12 +287,13 @@ class ChatSpeech2SpeechSession:
         chat_messages = self.chat_messages
         while True:
             try:
-                message_partial = await chatbot_response_stream.read(5)
+                message_partial = await chatbot_response_stream.read(10)
                 if not message_partial:
                     break
                 chatbot_response += message_partial
                 self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
                 if self.chatbot.pending_token and self.chatbot.pending_token in chatbot_response:
+                    await text2speech_source_stream.write(" ")  # prevent reading fifo from blocking
                     self.agent_can_speak = False
                     break
                 await text2speech_source_stream.write(message_partial)

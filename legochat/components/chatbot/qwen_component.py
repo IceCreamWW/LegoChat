@@ -104,6 +104,7 @@ Objective: Aim to provide coherent and accurate responses while ensuring that un
                     if signal == "interrupt":
                         streamer._stop_event.set()
                         thread.join()
+                        logger.debug("Qwen process interrupted")
                         break
                 fifo.write(response_partial)
                 fifo.flush()
