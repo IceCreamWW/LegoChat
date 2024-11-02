@@ -49,13 +49,23 @@ class SamBertHiFiGanComponent(Component):
                 text += text_partial
                 tts_text, text = extract_tts_text(text)
                 if tts_text:
-                    logger.info(f"tts_text: {tts_text}")
+                    start = time.time()
                     wav_bytes = self.tts(input=tts_text)[OutputKeys.OUTPUT_WAV]
+                    end = time.time()
+                    output_seconds = len(wav_bytes[self.wav_header_length :]) / 2 / self.sample_rate
+                    infernece_seconds = end - start
+                    logger.debug(
+                        f"SamBert-HiFi-GAN synthesize [{tts_text}][{output_seconds:.3f}s]; cost {infernece_seconds:.3f}s, rtf: {infernece_seconds / output_seconds:.3f}"
+                    )
                     fifo_audio.write(wav_bytes[self.wav_header_length :])
             if text:
                 wav_bytes = self.tts(input=text)[OutputKeys.OUTPUT_WAV]
                 fifo_audio.write(wav_bytes[self.wav_header_length :])
         if control_pipe:
             control_pipe.close()
-        logger.info("SamBert-HiFi-GAN process finished")
+        logger.debug("SamBert-HiFi-GAN process finished")
         return 0
+
+
+if __name__ == "__main__":
+    pass

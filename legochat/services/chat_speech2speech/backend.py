@@ -1,8 +1,10 @@
 import argparse
 import asyncio
+import errno
 import logging
 import os
 import tempfile
+import traceback
 from multiprocessing import Pipe
 from pathlib import Path
 from typing import Optional
@@ -46,7 +48,7 @@ class ChatSpeech2Speech(Service):
         self.sessions[session_id].is_alive = False
         while True:
             await asyncio.sleep(10)
-            if not self.session[session_id].is_alive:
+            if not self.sessions[session_id].is_alive:
                 break
         del self.sessions[session_id]
 
@@ -123,7 +125,7 @@ class ChatSpeech2SpeechSession:
         asyncio.create_task(self.transcribe())
 
     async def on_interrupt(self, sender="user"):
-        logger.info(f"interrupt received from {sender}")
+        logger.debug(f"interrupt received from {sender}")
         if not self.allow_vad_interrupt and sender == "vad":
             return
         self.agent_can_speak = False
@@ -132,12 +134,17 @@ class ChatSpeech2SpeechSession:
             self.chatbot_controller.close()
             self.chatbot_controller = None
         if self.text2speech_controller:
-            self.text2speech_controller.send("interrupt")
-            self.text2speech_controller.close()
-            self.text2speech_controller = None
+            # the text2speech_controller might already be closed
+            try:
+                self.text2speech_controller.send("interrupt")
+                self.text2speech_controller.close()
+            except OSError as e:
+                if e.errno != errno.EPIPE:
+                    raise e
+                self.text2speech_controller = None
 
     def on_end_of_turn(self, sender="user"):
-        logger.info(f"end of turn received from {sender}")
+        logger.debug(f"end of turn received from {sender}")
         if not self.allow_vad_eot and sender == "vad":
             return
         if self.agent_can_speak:
@@ -285,7 +292,8 @@ class ChatSpeech2SpeechSession:
                     break
                 chatbot_response += message_partial
                 self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
-                if self.chatbot.pending_message and chatbot_response.startswith(self.chatbot.pending_message):
+                if self.chatbot.pending_token and self.chatbot.pending_token in chatbot_response:
+                    self.agent_can_speak = False
                     break
                 await text2speech_source_stream.write(message_partial)
             except Exception as e:
@@ -293,5 +301,6 @@ class ChatSpeech2SpeechSession:
         text2speech_source_stream.close()
 
         # chatbot has finished generating, text2speech might still be processing
-        self.chatbot_controller.close()
-        self.chatbot_controller = None
+        if self.chatbot_controller:
+            self.chatbot_controller.close()
+            self.chatbot_controller = None

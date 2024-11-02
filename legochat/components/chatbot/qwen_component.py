@@ -101,7 +101,6 @@ Objective: Aim to provide coherent and accurate responses while ensuring that un
             for response_partial in streamer:
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
-                    logger.info(f"Qwen received signal: {signal}")
                     if signal == "interrupt":
                         streamer._stop_event.set()
                         thread.join()
@@ -109,13 +108,15 @@ Objective: Aim to provide coherent and accurate responses while ensuring that un
                 fifo.write(response_partial)
                 fifo.flush()
                 response += response_partial
+                if self.pending_token and self.pending_token in response_partial:
+                    break
 
         if control_pipe:
             control_pipe.close()
         return response
 
     @property
-    def pending_message(self):
+    def pending_token(self):
         return "[pd]"
 
     def generate(self, **kwargs):

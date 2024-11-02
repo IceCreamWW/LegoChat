@@ -49,7 +49,7 @@
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const sampleRate = audioContext.sampleRate;
 
-            const response = await fetch(`/start_session?allow_vad_interrupt=${allowVadInterrupt}&allow_vad_eot=${allowVadEot}&sample_rate=${sampleRate}`);
+            const response = await fetch(`./start_session?allow_vad_interrupt=${allowVadInterrupt}&allow_vad_eot=${allowVadEot}&sample_rate=${sampleRate}`);
             const responseData = await response.json();
             sessionId = responseData.session_id;
 
@@ -79,7 +79,7 @@
                     int16Data[i] = Math.min(1, audioData[i]) * 32767;
                 }
                 const binaryData = new Uint8Array(int16Data.buffer);
-                await fetch(`/${sessionId}/user_audio`, {
+                await fetch(`./${sessionId}/user_audio`, {
                     method: 'POST',
                     body: binaryData
                 });
@@ -94,19 +94,24 @@
             let audio = new Audio();
             audio.loop = false;
             let hls;
+            audio.addEventListener('ended', async () => {
+                await fetch(`./${sessionId}/agent_finished_speaking`, { method: 'POST' });
+            });
 
             // Monitor agent's speak status and reload m3u8 when necessary
             setInterval(async () => {
-                const response = await fetch(`/${sessionId}/agent_can_speak`);
+                const response = await fetch(`./${sessionId}/agent_can_speak`);
                 const { agent_can_speak } = await response.json();
                 
                 if (agent_can_speak && !agentCanSpeak) {
-                    const m3u8Url = `/${sessionId}/assets/agent.m3u8?time=${Date.now()}`; // Bypass caching
+                    const m3u8Url = `./${sessionId}/assets/agent.m3u8?time=${Date.now()}`; // Bypass caching
                     if (Hls.isSupported()) {
                         if (hls) {
                             hls.destroy();
                         }
-                        hls = new Hls();
+                        hls = new Hls({
+                            startPosition: 0,
+                        });
                         hls.loadSource(m3u8Url);
                         hls.attachMedia(audio);
                         hls.on(Hls.Events.MANIFEST_PARSED, function () {
@@ -126,16 +131,17 @@
                         hls = null;
                     }
                     audio.pause();
+                    audio.currentTime = 0;
                     audio.src = ''; // Unset source to handle invalidation
                 }
                 agentCanSpeak = agent_can_speak;
-            }, 1000);
+            }, 500);
         }
 
         async function pollTranscript() {
             // Periodically update the transcript from backend
             setInterval(async () => {
-                const response = await fetch(`/${sessionId}/transcript`);
+                const response = await fetch(`./${sessionId}/transcript`);
                 const transcript = await response.json();
                 document.getElementById('transcriptText').innerText = transcript;
             }, 100);
@@ -144,7 +150,7 @@
         async function pollChatMessages() {
             // Periodically update chat messages from backend
             setInterval(async () => {
-                const response = await fetch(`/${sessionId}/chat_messages`);
+                const response = await fetch(`./${sessionId}/chat_messages`);
                 const messages = await response.json();
                 const messagesContainer = document.getElementById('messages');
                 messagesContainer.innerHTML = '';
@@ -160,8 +166,8 @@
 
         // Button actions
         document.getElementById('startSession').addEventListener('click', startSession);
-        document.getElementById('interrupt').addEventListener('click', () => fetch(`/${sessionId}/interrupt`, { method: 'POST' }));
-        document.getElementById('endOfTurn').addEventListener('click', () => fetch(`/${sessionId}/end_of_turn`, { method: 'POST' }));
+        document.getElementById('interrupt').addEventListener('click', () => fetch(`./${sessionId}/interrupt`, { method: 'POST' }));
+        document.getElementById('endOfTurn').addEventListener('click', () => fetch(`./${sessionId}/end_of_turn`, { method: 'POST' }));
     </script>
 </body>
 </html>

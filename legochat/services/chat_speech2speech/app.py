@@ -1,8 +1,9 @@
 import asyncio
 import logging
 
-logging.getLogger("legochat").setLevel(logging.INFO)
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
+logger = logging.getLogger("legochat")
+logger.setLevel(logging.INFO)
 import threading
 import time
 from pathlib import Path
@@ -83,12 +84,18 @@ def agent_can_speak(session_id):
     return jsonify({"agent_can_speak": can_speak})
 
 
+@app.route("/<session_id>/agent_finished_speaking")
+def agent_finished_speaking(session_id):
+    service.sessions.get(session_id).agent_can_speak = False
+    return "OK"
+
+
 @app.route("/<session_id>/assets/<filename>")
 def get_session_file(session_id, filename):
     directory = service.sessions[session_id].workspace.absolute()
     while not (directory / filename).exists():
         time.sleep(1)
-    print(f"Sending {directory / filename}")
+    logger.debug(f"Sending {directory / filename}")
     return send_from_directory(directory, filename)
 
 
@@ -141,5 +148,6 @@ async def test(session_id):
 
 
 if __name__ == "__main__":
-    certs = ("certs/cert.pem", "certs/key.pem")
-    app.run(host="0.0.0.0", port=5555, use_reloader=False, ssl_context=certs)
+    # certs = ("certs/cert.pem", "certs/key.pem")
+    # app.run(host="0.0.0.0", port=5555, use_reloader=False, ssl_context=certs)
+    app.run(host="0.0.0.0", port=5555, use_reloader=False)
