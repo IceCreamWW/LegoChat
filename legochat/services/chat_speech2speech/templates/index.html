@@ -110,6 +110,7 @@
                         hls.loadSource(m3u8Url);
                         hls.attachMedia(audio);
                         hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                            audio.currentTime = 0
                             audio.play();
                         });
                     } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {

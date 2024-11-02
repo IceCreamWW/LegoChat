@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 from legochat.components import Component, register_component
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
@@ -33,19 +34,34 @@ class QwenComponent(Component):
         self.model_name = model_name
 
     def setup(self):
-        return
         self.model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype="auto", device_map="auto")
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        logger.info("Qwen model loaded")
 
     @property
     def system_prompt(self):
+        prompt = """
+You are an intelligent chatbot designed to assist the user based on transcribed speech text. Please follow these guidelines:
+
+1. Handle Transcription Errors: If the user’s message has minor transcription errors, try to interpret the meaning based on context. Make a reasonable attempt to respond as accurately as possible.
+
+2. Meaningless or Noisy Inputs: If the transcription contains random noises or appears nonsensical (e.g., jumbled words or letters with no coherent meaning), respond with [pd], indicating you're waiting for a clearer user input.
+
+3. Partial Messages: When the user input is incomplete, like "今天是" or "这样的话," reply with [pd] to prompt them for further clarification.
+
+4. Acknowledge Responses: If the user acknowledges your response with phrases like "了解了" or "这样啊," reply with [pd] to indicate you’re awaiting additional input.
+
+5. Repetitive Responses: When the user sends identical messages in succession, such as "谢谢," respond normally to the first instance but use [pd] for any immediate, repeated responses.
+
+Objective: Aim to provide coherent and accurate responses while ensuring that unclear or repetitive inputs prompt the user to continue or clarify.
+"""
         messages = [
             {
                 "role": "system",
-                "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant. Limit your response to as short as possible.",
+                "content": prompt,
             },
         ]
-        return messages[:]
+        return messages
 
     def add_user_message(self, messages, user_message):
         new_messages = messages[:]
@@ -60,24 +76,9 @@ class QwenComponent(Component):
     def process_func(
         self,
         messages,
-        text_fifo_path,
+        text_fifo_path=None,
         control_pipe=None,
     ):
-        print("in chatbot")
-        response = "测试用这个回复," * 5
-        with open(text_fifo_path, "w") as fifo:
-            for c in response:
-                print("sending", c)
-                fifo.write(c)
-                fifo.flush()
-                time.sleep(0.01)
-                if control_pipe and control_pipe.poll():
-                    signal = control_pipe.recv()
-                    if signal == "interrupt":
-                        logger.info("chatbot received interrupt signal")
-                        break
-        logger.info("chatbot sent all response")
-        return response
 
         text = self.tokenizer.apply_chat_template(
             messages,
@@ -92,11 +93,15 @@ class QwenComponent(Component):
         thread = threading.Thread(target=self.generate, kwargs=generation_kwargs)
         thread.start()
 
+        if text_fifo_path is None:
+            text_fifo_path = Path("/dev/null")
+
         response = ""
         with open(text_fifo_path, "w") as fifo:
             for response_partial in streamer:
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
+                    logger.info(f"Qwen received signal: {signal}")
                     if signal == "interrupt":
                         streamer._stop_event.set()
                         thread.join()
@@ -105,7 +110,13 @@ class QwenComponent(Component):
                 fifo.flush()
                 response += response_partial
 
+        if control_pipe:
+            control_pipe.close()
         return response
+
+    @property
+    def pending_message(self):
+        return "[pd]"
 
     def generate(self, **kwargs):
         try:
@@ -115,16 +126,30 @@ class QwenComponent(Component):
 
 
 if __name__ == "__main__":
-    logger.basicConfig(level=logging.INFO)
-    prompt = "简单介绍一下音频-文本大模型"
-    messages = [
-        {
-            "role": "system",
-            "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant. Limit your response to as short as possible.",
-        },
-        {"role": "user", "content": prompt},
-    ]
+    logging.basicConfig(level=logging.INFO)
+    logger.setLevel(logging.DEBUG)
     component = QwenComponent()
-    result = component.process(messages)
-    for new_text in result:
-        print(new_text)
+    component.setup()
+    messages = component.system_prompt
+
+    messages = component.add_user_message(messages, "简单介绍一下音频-文本大模型")
+    response = component.process_func(messages=messages)
+    messages = component.add_agent_message(messages, response)
+
+    messages = component.add_user_message(messages, "谢谢")
+    response = component.process_func(messages=messages)
+    messages = component.add_agent_message(messages, response)
+
+    messages = component.add_user_message(messages, "嗯嗯")
+    response = component.process_func(messages=messages)
+    messages = component.add_agent_message(messages, response)
+
+    messages = component.add_user_message(messages, "这样的话")
+    response = component.process_func(messages=messages)
+    messages = component.add_agent_message(messages, response)
+
+    messages = component.add_user_message(messages, "再简单介绍一下神经网络吧")
+    response = component.process_func(messages=messages)
+    messages = component.add_agent_message(messages, response)
+
+    print(messages)

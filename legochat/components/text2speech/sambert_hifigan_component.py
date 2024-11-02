@@ -55,5 +55,7 @@ class SamBertHiFiGanComponent(Component):
             if text:
                 wav_bytes = self.tts(input=text)[OutputKeys.OUTPUT_WAV]
                 fifo_audio.write(wav_bytes[self.wav_header_length :])
+        if control_pipe:
+            control_pipe.close()
         logger.info("SamBert-HiFi-GAN process finished")
         return 0

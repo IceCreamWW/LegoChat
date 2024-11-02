@@ -23,6 +23,8 @@ if env_file.exists():
 SPEECH2TEXT_MIN_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_SECONDS", "0.2"))
 SPEECH2TEXT_MAX_SECONDS = float(os.getenv("SPEECH2TEXT_MAX_SECONDS", "5.0"))
 SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_INTERVAL_SECONDS", "0.2"))
+VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.5"))
+UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "1.0"))
 
 
 class ChatSpeech2Speech(Service):
@@ -37,7 +39,16 @@ class ChatSpeech2Speech(Service):
     async def start_session(self, **session_kwargs):
         session = ChatSpeech2SpeechSession(self, **session_kwargs)
         self.sessions[session.session_id] = session
+        asyncio.create_task(self.heartbeat(session.session_id))
         await session.run()
+
+    async def heartbeat(self, session_id):
+        self.sessions[session_id].is_alive = False
+        while True:
+            await asyncio.sleep(10)
+            if not self.session[session_id].is_alive:
+                break
+        del self.sessions[session_id]
 
 
 class ChatSpeech2SpeechSession:
@@ -48,8 +59,6 @@ class ChatSpeech2SpeechSession:
         user_audio_input_stream: AudioInputStream,
         agent_audio_output_stream: AudioOutputStream,
         workspace: Optional[Path] = None,
-        voiced_seconds_to_interrupt: float = -1,
-        unvoiced_seconds_to_eot: float = -1,
         allow_vad_interrupt: bool = True,
         allow_vad_eot: bool = True,
     ):
@@ -74,9 +83,6 @@ class ChatSpeech2SpeechSession:
         self.user_audio_input_stream = user_audio_input_stream
         self.agent_audio_output_stream = agent_audio_output_stream
 
-        self.voiced_bytes_to_interrupt = int(voiced_seconds_to_interrupt * self.sample_rate) * 2
-        self.unvoiced_bytes_to_eot = int(unvoiced_seconds_to_eot * self.sample_rate) * 2
-
         self.allow_vad_interrupt = allow_vad_interrupt
         self.allow_vad_eot = allow_vad_eot
 
@@ -84,9 +90,8 @@ class ChatSpeech2SpeechSession:
         self.speech2text_max_bytes = int(SPEECH2TEXT_MAX_SECONDS * self.sample_rate * 2)
         self.speech2text_min_interval_bytes = int(SPEECH2TEXT_MIN_INTERVAL_SECONDS * self.sample_rate * 2)
         self.speech2text_offset_bytes = 0
-        print(f"speech2text_min_bytes: {self.speech2text_min_bytes}")
-        print(f"speech2text_max_bytes: {self.speech2text_max_bytes}")
-        print(f"speech2text_min_interval_bytes: {self.speech2text_min_interval_bytes}")
+        self.voiced_bytes_to_interrupt = int(VOICED_SECONDS_TO_INTERRUPT * self.sample_rate) * 2
+        self.unvoiced_bytes_to_eot = int(UNVOICED_SECONDS_TO_EOT * self.sample_rate) * 2
 
         self.event_bus = EventBus()
         self.agent_can_speak = False
@@ -118,22 +123,41 @@ class ChatSpeech2SpeechSession:
         asyncio.create_task(self.transcribe())
 
     async def on_interrupt(self, sender="user"):
+        logger.info(f"interrupt received from {sender}")
         if not self.allow_vad_interrupt and sender == "vad":
             return
         self.agent_can_speak = False
         if self.chatbot_controller:
             self.chatbot_controller.send("interrupt")
+            self.chatbot_controller.close()
+            self.chatbot_controller = None
         if self.text2speech_controller:
             self.text2speech_controller.send("interrupt")
+            self.text2speech_controller.close()
+            self.text2speech_controller = None
 
     def on_end_of_turn(self, sender="user"):
-        print(f"end of turn received from {sender}")
+        logger.info(f"end of turn received from {sender}")
         if not self.allow_vad_eot and sender == "vad":
             return
         if self.agent_can_speak:
             return
+        transcript = self.transcript
+        if not transcript.strip():
+            return
+        last_voiced_segment = self.voiced_segments[-1]
+        self.voiced_segments.clear()
+        self.transcripts.clear()
+
+        # handle manual EOT when VAD has not detect eos yet
+        if not last_voiced_segment["eos"]:
+            self.voiced_segments.append(
+                {"start": last_voiced_segment["end"], "end": last_voiced_segment["end"], "eos": False}
+            )
+
+        self.agent_audio_output_stream.reset()
         self.agent_can_speak = True
-        asyncio.create_task(self.agent_speak())
+        asyncio.create_task(self.agent_speak(transcript))
 
     async def detect_speech(self):
         chunk = self.data[self.last_vad_end :]
@@ -166,16 +190,18 @@ class ChatSpeech2SpeechSession:
             await self.event_bus.emit(EventEnum.UPDATE_VOICED_SEGMENTS)
 
         if (
-            self.unvoiced_bytes_to_eot > 0
+            not self.agent_can_speak
+            and self.voiced_segments
+            and self.unvoiced_bytes_to_eot > 0
             and self.last_vad_end - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
-            and not self.agent_can_speak
         ):
             await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
         elif (
-            self.voiced_bytes_to_interrupt > 0
+            self.agent_can_speak
+            and self.voiced_segments
+            and self.voiced_bytes_to_interrupt > 0
             and self.last_vad_end == self.voiced_segments[-1]["end"]
             and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
-            and self.agent_can_speak
         ):
             await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
 
@@ -223,10 +249,7 @@ class ChatSpeech2SpeechSession:
         self.transcripts.append((start, end, text))
         self.transcripts.sort(key=lambda x: x[0])
 
-    async def agent_speak(self):
-        transcript = self.transcript
-        self.voiced_segments = []
-        self.transcripts = []
+    async def agent_speak(self, transcript):
         self.chatbot_controller, chatbot_controller_child = Pipe()
         self.text2speech_controller, text2speech_controller_child = Pipe()
 
@@ -256,26 +279,19 @@ class ChatSpeech2SpeechSession:
         chatbot_response = ""
         chat_messages = self.chat_messages
         while True:
-            logger.info("waiting for chatbot response")
-            message_partial = await chatbot_response_stream.read(5)
-            if not message_partial:
-                break
-            await text2speech_source_stream.write(message_partial)
-            chatbot_response += message_partial
-            self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
-        logger.info("read all chatbot response")
+            try:
+                message_partial = await chatbot_response_stream.read(5)
+                if not message_partial:
+                    break
+                chatbot_response += message_partial
+                self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
+                if self.chatbot.pending_message and chatbot_response.startswith(self.chatbot.pending_message):
+                    break
+                await text2speech_source_stream.write(message_partial)
+            except Exception as e:
+                logger.error(e)
         text2speech_source_stream.close()
-        # await self.event_bus.emit(EventEnum.UPDATE_CHAT_MESSAGES, chat_messages_partial)
 
-
-def test(text_fifo_path):
-    import time
-
-    print("TESTING")
-    response = "测试用这个回复" * 100
-    with open(text_fifo_path, "w") as fifo:
-        for c in response:
-            print("writing", c)
-            fifo.write(c)
-            fifo.flush()
-            time.sleep(0.5)
+        # chatbot has finished generating, text2speech might still be processing
+        self.chatbot_controller.close()
+        self.chatbot_controller = None

@@ -52,7 +52,9 @@ def start_session():
     workspace.mkdir(parents=True, exist_ok=True)
 
     user_audio_stream = FIFOAudioIOStream(sample_rate_w=sample_rate, sample_rate_r=16000)
-    agent_audio_output_stream = FIFOAudioIOStream(sample_rate_w=service.text2speech.sample_rate)
+    agent_audio_output_stream = FIFOAudioIOStream(
+        sample_rate_w=service.text2speech.sample_rate, m3u8_path=workspace / "agent.m3u8"
+    )
 
     # Start session asynchronously
     asyncio.run_coroutine_threadsafe(
@@ -66,7 +68,6 @@ def start_session():
         ),
         background_loop,
     )
-    agent_audio_output_stream.stream_to_m3u8(workspace / "agent.m3u8")
     return jsonify({"session_id": session_id})
 
 
@@ -106,8 +107,14 @@ def chat_messages(session_id):
 @app.route("/<session_id>/user_audio", methods=["POST"])
 async def user_audio(session_id):
     data = request.data
+    service.sessions[session_id].is_alive = True
     await service.sessions[session_id].user_audio_input_stream.write(data)
     return "OK", 200
+
+
+@app.route("/total_sessions", methods=["POST"])
+async def total_sessions(session_id):
+    return jsonify({"total_sessions": len(service.sessions)})
 
 
 @app.route("/<session_id>/interrupt", methods=["POST"])
