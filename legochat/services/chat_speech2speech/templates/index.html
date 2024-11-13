@@ -287,8 +287,8 @@
             <!-- Right side: Status Bar and Session Count -->
             <div class="navbar-text ml-auto d-flex align-items-center">
                 <div class="status-bar">
-                    <i id="statusIcon" class="fas fa-microphone-slash text-danger status-icon"></i>
-                    <span id="statusText">Agent Can't Speak</span>
+                    <i id="statusIcon" class="fas fa-volume-mute text-danger status-icon"></i>
+                    <span id="statusText">Agent isn't speaking</span>
                 </div>
                 <div class="session-count ml-3">
                     <i class="fas fa-user"></i> <span id="sessionCount">0</span>
@@ -303,7 +303,7 @@
 
         <!-- Transcript Display and Controls -->
         <div class="transcript-display">
-            <textarea id="transcriptText" class="transcript-text" readonly></textarea>
+            <textarea id="transcriptText" class="transcript-text" readonly placeholder="你可以用语音问我，'明天可不可以不开组会'"></textarea>
             <div class="transcript-buttons">
                 <div class="left-buttons">
                     <button id="listeningToggle" class="btn listening-btn">
@@ -479,17 +479,17 @@
                     const statusIcon = document.getElementById('statusIcon');
                     const statusText = document.getElementById('statusText');
                     if (agentCanSpeak) {
-                        statusIcon.classList.remove('fa-microphone-slash', 'text-danger');
-                        statusIcon.classList.add('fa-microphone', 'text-success');
-                        statusText.textContent = "Agent Can Speak";
+                        statusIcon.classList.remove('fa-volume-mute', 'text-danger');
+                        statusIcon.classList.add('fa-volume-up', 'text-success');
+                        statusText.textContent = "Agent is speaking";
 
                         // Update action button to Interrupt
                         actionButtonIcon.className = 'fas fa-stop';
                         actionButtonText.textContent = ' Interrupt';
                     } else {
-                        statusIcon.classList.remove('fa-microphone', 'text-success');
-                        statusIcon.classList.add('fa-microphone-slash', 'text-danger');
-                        statusText.textContent = "Agent Can't Speak";
+                        statusIcon.classList.remove('fa-volume-up', 'text-success');
+                        statusIcon.classList.add('fa-volume-mute', 'text-danger');
+                        statusText.textContent = "Agent isn't speaking";
 
                         // Update action button to Send
                         actionButtonIcon.className = 'fas fa-arrow-up';
@@ -500,7 +500,7 @@
                     pollingActive = false;
                     showLostConnectionOverlay();
                 }
-            }, 200);
+            }, 100);
         }
 
         async function pollTranscript() {

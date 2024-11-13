@@ -37,7 +37,7 @@ class SamBertHiFiGanComponent(Component):
 
     def process_func(self, text_fifo_path, audio_fifo_path, control_pipe=None):
         text = ""
-        with open(text_fifo_path, "r") as fifo_text, open(audio_fifo_path, "wb") as fifo_audio:
+        with open(text_fifo_path, "r", encoding="u8") as fifo_text, open(audio_fifo_path, "wb") as fifo_audio:
             while True:
                 text_partial = fifo_text.read(5)
                 if not text_partial:

@@ -95,9 +95,8 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         self.ffmpeg_cmd.extend(["-ar", str(self.sample_rate_w)])
         self.ffmpeg_cmd.extend(["-ac", "1"])
         self.ffmpeg_cmd.extend(["-i", self.fifo_path.as_posix()])
-        self.ffmpeg_cmd.extend(["-c:a", "aac"])
-        self.ffmpeg_cmd.extend(["-b:a", "192k"])
-        self.ffmpeg_cmd.extend(["-ar", str(sample_rate)])
+        self.ffmpeg_cmd.extend(["-c:a", "libmp3lame"])
+        self.ffmpeg_cmd.extend(["-b:a", "128k"])
         self.ffmpeg_cmd.extend(["-f", "hls"])
         self.ffmpeg_cmd.extend(["-hls_time", "1"])
         self.ffmpeg_cmd.extend(["-hls_list_size", "0"])
@@ -142,6 +141,8 @@ class FIFOTextIOStream:
     async def write(self, data):
         if self.fifo_w is None:
             self.fifo_w = await asyncio.to_thread(open, self.fifo_path, "w")
+        if not data:
+            return 0
         size = await asyncio.to_thread(self.fifo_w.write, data)
         await asyncio.to_thread(self.fifo_w.flush)
         return size
@@ -203,7 +204,7 @@ if __name__ == "__main__":
                 break
             logger.debug("read: " + data)
 
-    async def main_audio():
+    async def test_audio():
 
         async def read_audio():
             while True:

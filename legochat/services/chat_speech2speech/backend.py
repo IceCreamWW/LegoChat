@@ -173,9 +173,9 @@ class ChatSpeech2SpeechSession:
             if "start" in result:
                 self.user_is_speaking = True
                 if self.voiced_segments and self.voiced_segments[-1]["end"] >= result["start"] * 2:
-                    continue
-                self.voiced_segments.append({"start": result["start"] * 2})
-            elif "end" in result:
+                    self.voiced_segments.pop()
+                self.voiced_segments.append({"start": result["start"] * 2, "eos": False})
+            if "end" in result:
                 self.user_is_speaking = False
                 self.voiced_segments[-1]["end"] = result["end"] * 2
                 self.voiced_segments[-1]["eos"] = True
@@ -192,20 +192,20 @@ class ChatSpeech2SpeechSession:
         if (
             not self.agent_can_speak
             and self.voiced_segments
-            and self.unvoiced_bytes_to_eot > 0
             and self.last_vad_end - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
         ):
             await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
         elif (
             self.agent_can_speak
             and self.voiced_segments
-            and self.voiced_bytes_to_interrupt > 0
             and self.last_vad_end == self.voiced_segments[-1]["end"]
             and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
         ):
             await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
 
     async def transcribe(self):
+        """Optimization in this functions applies to simulating online
+        speech2text with offline speech2text model."""
         end, eos = self.voiced_segments[-1]["end"], self.voiced_segments[-1]["eos"]
         if end <= self.last_speech2text_end:
             return
@@ -291,6 +291,7 @@ class ChatSpeech2SpeechSession:
 
         chatbot_response = ""
         chat_messages = self.chat_messages
+        await text2speech_source_stream.write("")
         while True:
             try:
                 message_partial = await chatbot_response_stream.read(10)
@@ -299,7 +300,6 @@ class ChatSpeech2SpeechSession:
                 chatbot_response += message_partial
                 self.chat_messages = self.chatbot.add_agent_message(chat_messages, chatbot_response)
                 if self.chatbot.pending_token and self.chatbot.pending_token == chatbot_response.strip():
-                    await text2speech_source_stream.write(" ")  # prevent reading fifo from blocking
                     self.agent_can_speak = False
                     break
 

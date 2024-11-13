@@ -6,5 +6,8 @@ components:
   chatbot:
     name: qwen
   text2speech:
-    name: sambert_hifigan
+    # name: sambert_hifigan
+    name: gptsovits
+    params:
+      speaker: om
   

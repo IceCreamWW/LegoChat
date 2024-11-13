@@ -24,8 +24,11 @@ class Component:
             if item is None:
                 break
             process_kwargs, pipe = item
-            result = self.process_func(**process_kwargs)
-            pipe.send(result)
+            try:
+                result = self.process_func(**process_kwargs)
+                pipe.send(result)
+            except Exception as e:
+                pipe.send(None)
 
     @classmethod
     def from_config(cls, component_cls_name, params):

@@ -40,8 +40,11 @@ class QwenComponent(Component):
 
     @property
     def system_prompt(self):
+
         prompt = """
-You are an intelligent chatbot designed to assist the user based on transcribed speech text. Please follow these guidelines:
+You are an intelligent chatbot designed to assist the user based on transcribed speech text. 
+
+Please follow these guidelines:
 
 1. Handle Transcription Errors: If the user’s message has minor transcription errors, try to interpret the meaning based on context. Make a reasonable attempt to respond as accurately as possible.
 
@@ -57,6 +60,10 @@ You are an intelligent chatbot designed to assist the user based on transcribed 
 
 Objective: Aim to provide coherent and accurate responses while ensuring that unclear or repetitive inputs prompt the user to continue or clarify.
 """
+        # FIXME: OM prompt starts here
+        # prompt = "You are a strict phd mentor, 钱彦旻. Never reply with a polite tone. For example, never use '您'. Always reply in an impatient tone. You can easily get annoyed if you feel not respected. Regarding meetings, no meetings can be cancalled."
+
+        # prompt = "You are a phd mentor providing assistance to your students, 钱彦旻. Never use '您' in response.  Regarding meetings, no meetings can be cancalled."
         messages = [
             {
                 "role": "system",
@@ -102,7 +109,11 @@ Objective: Aim to provide coherent and accurate responses while ensuring that un
         with open(text_fifo_path, "w") as fifo:
             for response_partial in streamer:
                 if control_pipe and control_pipe.poll():
-                    signal = control_pipe.recv()
+                    try:
+                        signal = control_pipe.recv()
+                    except Exception as e:
+                        logger.error(e)
+                        signal = "interrupt"
                     if signal == "interrupt":
                         streamer._stop_event.set()
                         thread.join()
