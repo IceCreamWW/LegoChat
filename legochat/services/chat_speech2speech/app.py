@@ -2,6 +2,9 @@ import asyncio
 import logging
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO
+)
 logger = logging.getLogger("legochat")
 logger.setLevel(logging.INFO)
 import threading
@@ -103,7 +106,7 @@ def clear_transcript(session_id):
 def get_session_file(session_id, filename):
     directory = service.sessions[session_id].workspace.absolute()
     while not (directory / filename).exists():
-        time.sleep(1)
+        time.sleep(0.2)
     logger.debug(f"Sending {directory / filename}")
     return send_from_directory(directory, filename)
 

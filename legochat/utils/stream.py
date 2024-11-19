@@ -141,9 +141,10 @@ class FIFOTextIOStream:
     async def write(self, data):
         if self.fifo_w is None:
             self.fifo_w = await asyncio.to_thread(open, self.fifo_path, "w")
-        if not data:
-            return 0
-        size = await asyncio.to_thread(self.fifo_w.write, data)
+        if data:
+            size = await asyncio.to_thread(self.fifo_w.write, data)
+        else:
+            size = 0
         await asyncio.to_thread(self.fifo_w.flush)
         return size
 

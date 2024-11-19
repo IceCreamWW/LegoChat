@@ -191,7 +191,7 @@ class GPTSoVITSComponent(Component):
         self._load_gpt(stats["gpt"])
         self._load_sovits(stats["sovits"])
         self._load_ref(stats["ref"])
-        logger.info("GPT-SoVITS model loaded")
+        logger.info(f"GPT-SoVITS model loaded from {self.ckpt_path}")
 
     def _load_ref(self, stats):
         self.ref_spec = stats["spec"].to(self.dtype).to(self.device)

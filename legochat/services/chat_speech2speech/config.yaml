@@ -9,5 +9,5 @@ components:
     # name: sambert_hifigan
     name: gptsovits
     params:
-      speaker: om
+      speaker: om_241114_interview
   

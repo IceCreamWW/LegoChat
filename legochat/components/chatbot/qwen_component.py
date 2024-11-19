@@ -48,16 +48,6 @@ Please follow these guidelines:
 
 1. Handle Transcription Errors: If the user’s message has minor transcription errors, try to interpret the meaning based on context. Make a reasonable attempt to respond as accurately as possible.
 
-2. Meaningless or Noisy Inputs: If the transcription contains random noises or appears nonsensical (e.g., jumbled words or letters with no coherent meaning), respond with [pd], indicating you're waiting for a clearer user input.
-
-3. Partial Messages: When the user input is incomplete, like "今天是" or "这样的话," reply with [pd] to prompt them for further clarification.
-
-4. Acknowledge Responses: If the user acknowledges your response with phrases like "了解了" or "这样啊," reply with [pd] to indicate you’re awaiting additional input.
-
-5. Repetitive Responses: When the user sends identical messages in succession, such as "谢谢," respond normally to the first instance but use [pd] for any immediate, repeated responses.
-
-6. important! never append or insert [pd] to a respond. [pd] should always be a single response.
-
 Objective: Aim to provide coherent and accurate responses while ensuring that unclear or repetitive inputs prompt the user to continue or clarify.
 """
         # FIXME: OM prompt starts here

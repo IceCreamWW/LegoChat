@@ -27,6 +27,7 @@ SPEECH2TEXT_MAX_SECONDS = float(os.getenv("SPEECH2TEXT_MAX_SECONDS", "5.0"))
 SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_INTERVAL_SECONDS", "0.2"))
 VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.3"))
 UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.6"))
+CHATBOT_MAX_MESSAGES = int(os.getenv("CHATBOT_MAX_MESSAGES", "20"))
 
 
 class ChatSpeech2Speech(Service):
@@ -268,6 +269,9 @@ class ChatSpeech2SpeechSession:
 
         self.chat_messages = self.chatbot.add_user_message(self.chat_messages, transcript)
 
+        if len(self.chat_messages) > CHATBOT_MAX_MESSAGES:
+            self.chat_messages = [self.chat_messages[0]] + self.chat_messages[-CHATBOT_MAX_MESSAGES:]
+
         # chatbot => chatbot_response_stream => text2speech_source_stream => text2speech
         chatbot_response_stream = FIFOTextIOStream()
         asyncio.create_task(
@@ -291,9 +295,10 @@ class ChatSpeech2SpeechSession:
 
         chatbot_response = ""
         chat_messages = self.chat_messages
-        await text2speech_source_stream.write("")
-        while True:
-            try:
+
+        try:
+            await text2speech_source_stream.write("")  # make sure the fifo is alive
+            while True:
                 message_partial = await chatbot_response_stream.read(10)
                 if not message_partial:
                     break
@@ -302,11 +307,14 @@ class ChatSpeech2SpeechSession:
                 if self.chatbot.pending_token and self.chatbot.pending_token == chatbot_response.strip():
                     self.agent_can_speak = False
                     break
-
                 await text2speech_source_stream.write(message_partial)
-            except Exception as e:
-                logger.error(e)
-        text2speech_source_stream.close()
+            text2speech_source_stream.close()
+        except Exception as e:
+            self.agent_can_speak = False
+            if isinstance(e, OSError):
+                if e.errno != errno.EPIPE:
+                    raise e
+            logger.error(e)
 
         # chatbot has finished generating, text2speech might still be processing
         if self.chatbot_controller:
