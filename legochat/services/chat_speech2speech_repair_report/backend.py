@@ -14,6 +14,8 @@ from legochat.utils.event import EventBus, EventEnum
 from legochat.utils.stream import (AudioInputStream, AudioOutputStream,
                                    FIFOTextIOStream)
 from repair_report import RepairReportBot
+from itn.chinese.inverse_normalizer import InverseNormalizer
+
 
 logger = logging.getLogger("legochat")
 env_file = Path(__file__).parent / ".env"
@@ -28,6 +30,8 @@ UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.6"))
 CHATBOT_MAX_MESSAGES = int(os.getenv("CHATBOT_MAX_MESSAGES", "50"))
 
 
+normalize = InverseNormalizer().normalize
+
 class ChatSpeech2Speech(Service):
     def __init__(self, config):
         super().__init__(config)
@@ -38,7 +42,10 @@ class ChatSpeech2Speech(Service):
         return ["vad", "speech2text", "chatbot", "text2speech"]
 
     async def start_session(self, **session_kwargs):
-        session = ChatSpeech2SpeechSession(self, **session_kwargs)
+        try:
+            session = ChatSpeech2SpeechSession(self, **session_kwargs)
+        except Exception as e:
+            print(e)
         self.sessions[session.session_id] = session
         asyncio.create_task(self.heartbeat(session.session_id))
         await session.run()
@@ -75,13 +82,9 @@ class ChatSpeech2SpeechSession:
         self.session_id = session_id
         self.sample_rate = 16000
 
-        self.repair_report_bot = RepairReportBot()
-
         self.vad_states = None
         self.voiced_segments = []
         self.transcripts = []
-        self.chatbot.system_prompt = repair_report_bot.system_prompt
-        self.chat_messages = self.chatbot.system_prompt
         self.text2speech_controller = None
 
         self.user_audio_input_stream = user_audio_input_stream
@@ -107,6 +110,10 @@ class ChatSpeech2SpeechSession:
 
         self.last_vad_end = 0
         self.last_speech2text_end = 0
+
+        self.repair_report_bot = RepairReportBot()
+        self.chatbot.system_prompt = self.repair_report_bot.system_prompt
+        self.chat_messages = self.chatbot.system_prompt
 
     async def run(self):
         asyncio.create_task(self.detect_speech())
@@ -262,15 +269,25 @@ class ChatSpeech2SpeechSession:
     async def agent_speak(self, transcript):
         self.text2speech_controller, text2speech_controller_child = Pipe()
 
+        transcript = normalize(transcript)
         self.chat_messages = self.chatbot.add_user_message(self.chat_messages, transcript)
 
         if len(self.chat_messages) > CHATBOT_MAX_MESSAGES:
             self.chat_messages = [self.chat_messages[0]] + self.chat_messages[-CHATBOT_MAX_MESSAGES:]
 
-        response = asyncio.to_thread(
+        response = await asyncio.to_thread(
             self.chatbot.process,
             messages=self.chat_messages,
         )
+
+        next_question = self.repair_report_bot.next_question_given_response(response)
+        if next_question is None:
+            self.agent_can_speak = True
+            self.chat_messages = self.chatbot.add_agent_message(self.chat_messages, self.repair_report_bot.to_markdown())
+            await asyncio.sleep(2)
+            self.agent_can_speak = False
+            return
+        
 
         text2speech_source_stream = FIFOTextIOStream()
         asyncio.create_task(
@@ -283,19 +300,14 @@ class ChatSpeech2SpeechSession:
         )
 
         try:
-            await text2speech_source_stream.write(response)  # make sure the fifo is alive
-            self.repair_report_bot.add_assistant_message(dict(role="assistant", content=response))
-            next_question = self.repair_report_bot.next_question()
-            if next_question is None:
-                self.agent_can_speak = False
-                self.chat_messages = self.chatbot.add_agent_message(chat_messages, self.repair_report_bot.to_dict())
-            else:
-                self.chat_messages = self.chatbot.add_agent_message(chat_messages, next_question)
-                await text2speech_source_stream.write(next_question)
-                text2speech_source_stream.close()
+            await text2speech_source_stream.write(next_question)
+            self.chat_messages = self.chatbot.add_agent_message(self.chat_messages, next_question)
+            text2speech_source_stream.close()
         except Exception as e:
             self.agent_can_speak = False
             if isinstance(e, OSError):
                 if e.errno != errno.EPIPE:
                     raise e
+            # # traceback.print_stack()
+            traceback.print_exc()
             logger.error(e)

@@ -369,6 +369,7 @@
             sessionId = responseData.session_id;
 
             initializeAudio();
+            getChatMessages();
             pollChatMessages();
             pollTranscript(); // Start polling the transcript
             pollTotalSessions(); // Start polling total sessions
@@ -523,6 +524,45 @@
                 }
             }, 100);
         }
+
+        async function getChatMessages() {
+            const messagesContainer = document.getElementById('chatMessages');
+            try {
+                const response = await fetch(`./${sessionId}/chat_messages`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const messages = await response.json();
+                console.log(messages)
+                messagesContainer.innerHTML = '';
+
+                messages.forEach(msg => {
+                    if (msg.role === 'user' || msg.role === 'assistant') {
+                        const messageDiv = document.createElement('div');
+                        messageDiv.classList.add('message', msg.role);
+
+                        const contentDiv = document.createElement('div');
+                        contentDiv.classList.add('message-content');
+
+                        // Render Markdown content
+                        contentDiv.innerHTML = marked.parse(msg.content);
+
+                        // If assistant, add audio player
+                        if (msg.role === 'assistant' && msg.audio_url) {
+                            const audioPlayer = document.createElement('audio');
+                            audioPlayer.controls = true;
+                            audioPlayer.src = msg.audio_url;
+                            audioPlayer.classList.add('audio-player');
+                            contentDiv.appendChild(audioPlayer);
+                        }
+
+                        messageDiv.appendChild(contentDiv);
+                        messagesContainer.appendChild(messageDiv);
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching chat messages:', error);
+            }
+        }
+
 
         async function pollChatMessages() {
             const messagesContainer = document.getElementById('chatMessages');

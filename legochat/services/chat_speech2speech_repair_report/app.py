@@ -121,7 +121,8 @@ def transcript(session_id):
 @app.route("/<session_id>/chat_messages")
 def chat_messages(session_id):
     chat_messages = service.sessions[session_id].chat_messages
-    return jsonify(chat_messages)
+    system_prompt = service.sessions[session_id].chatbot.system_prompt
+    return jsonify(chat_messages[len(system_prompt) - 1:])
 
 
 @app.route("/<session_id>/user_audio", methods=["POST"])

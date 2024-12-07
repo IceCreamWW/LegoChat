@@ -32,15 +32,6 @@ class StoppableTextIteratorStreamer(TextIteratorStreamer):
 class QwenComponent(Component):
     def __init__(self, model_name="Qwen/Qwen2.5-7B-Instruct"):
         self.model_name = model_name
-
-    def setup(self):
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype="auto", device_map="auto")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        logger.info("Qwen model loaded")
-
-    @property
-    def system_prompt(self):
-
         prompt = """
 You are an intelligent chatbot designed to assist the user based on transcribed speech text. 
 
@@ -50,17 +41,18 @@ Please follow these guidelines:
 
 Objective: Aim to provide coherent and accurate responses while ensuring that unclear or repetitive inputs prompt the user to continue or clarify.
 """
-        # FIXME: OM prompt starts here
-        # prompt = "You are a strict phd mentor, 钱彦旻. Never reply with a polite tone. For example, never use '您'. Always reply in an impatient tone. You can easily get annoyed if you feel not respected. Regarding meetings, no meetings can be cancalled."
-
-        # prompt = "You are a phd mentor providing assistance to your students, 钱彦旻. Never use '您' in response.  Regarding meetings, no meetings can be cancalled."
-        messages = [
+        self.system_prompt = [
             {
                 "role": "system",
                 "content": prompt,
             },
         ]
-        return messages
+
+    def setup(self):
+        self.model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype="auto", device_map="auto")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        logger.info("Qwen model loaded")
+
 
     def add_user_message(self, messages, user_message):
         new_messages = messages[:]

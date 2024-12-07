@@ -1,32 +1,17 @@
 from typing import Dict
 import rapidfuzz
 import json
-from .data import LOCATIONS, CATEGORIES
+from data import LOCATIONS, CATEGORIES
+from itn.chinese.inverse_normalizer import InverseNormalizer
 
 
-def normalize(text):
-    chinese_numbers = {
-        "零": 0,
-        "一": 1,
-        "幺": 1,
-        "二": 2,
-        "两": 2,
-        "三": 3,
-        "四": 4,
-        "五": 5,
-        "六": 6,
-        "七": 7,
-        "八": 8,
-        "九": 9,
-    }
-    return "".join(str(chinese_numbers.get(char, char)) for char in text)
-
+normalize = InverseNormalizer().normalize
 
 class Location:
     def __init__(self, building=None, floor=None, room=None):
-        self.building = normalize(building)
-        self.floor = normalize(floor)
-        self.room = normalize(room)
+        self.building = normalize(str(building)) if building else None
+        self.floor = normalize(str(floor)) if floor else None
+        self.room = normalize(str(room)) if room else None
 
     def is_empty(self):
         return self.building is None and self.floor is None and self.room is None
@@ -64,47 +49,49 @@ class RepairReportBot:
     def __init__(self):
         self.location = Location()
         self.category = Category()
-        self.messages = []
 
-    def prompt_messages(self):
+    @property
+    def system_prompt(self):
         return [
             {
                 "role": "system",
                 "content": (
-                    "你是一个帮助用户报修设备的助手，你需要从用户提供的信息或与用户的多轮对话中解析出要报修的设备所在地点和类别。\n"
+                    "你是一个帮助用户报修设备的助手，你需要从用户提供的信息中解析出要报修的设备所在地点和类别。\n"
                     "以json格式回复, 地点需要包括building，floor，room三个键，类别需要包含primary，secondary两个key。\n"
                     f"类别列表：{','.join(str(category) for category in all_categories)}\n"
                 ),
             },
+            {"role": "assistant", "content": "请问描述您要报修的问题和位置"},
             {"role": "user", "content": "我的宿舍水龙头漏水了"},
             {
                 "role": "assistant",
                 "content": '{"location": {"building": "宿舍", "floor": null, "room": null}, "category": {"primary": "水", "secondary": "洗手池龙头"}}',
             },
-            {"role": "user", "content": "我的宿舍水龙头漏水了\n三号楼1201"},
+            {"role": "assistant", "content": "请问描述您要报修的问题和位置"},
+            {"role": "user", "content": "我的宿舍83号楼1201的水龙头漏水了"},
             {
                 "role": "assistant",
-                "content": '{"location": {"building": "宿舍三号楼", "floor": null, "room": 1201}, "category": {"primary": "水", "secondary": "洗手池龙头"}}',
+                "content": '{"location": {"building": "宿舍83号楼", "floor": null, "room": 1201}, "category": {"primary": "水", "secondary": "洗手池龙头"}}',
             },
+            {"role": "assistant", "content": "请问描述您要报修的问题和位置"},
             {"role": "user", "content": "有一个插座坏了。"},
-            {"role": "assistant", "content": "请问报修地点在什么位置？"},
-            {"role": "user", "content": "图书馆503房间"},
+            {"role": "user", "content": "图书馆5楼503房间"},
             {
                 "role": "assistant",
-                "content": '{"location": {"building": 图书馆, "floor": null, "room": 503}, "category": {"primary": "电", "secondary": "插座"}}',
+                "content": '{"location": {"building": 图书馆, "floor": "5楼", "room": 503}, "category": {"primary": "电", "secondary": "插座"}}',
             },
+            {"role": "assistant", "content": "请问描述您要报修的问题和位置"},
         ]
 
-    def add_user_message(self, message: Dict):
-        self.messages.append(message)
-
-    def add_assistant_message(self, message: Dict):
-        if self.location is None and self.category is None:
-            pass
-
-        message_dict = json.loads(message["content"])
+    def next_question_given_response(self, message: str):
+        print(message)
+        try:
+            message_dict = json.loads(message)
+        except:
+            return self.next_question()
         self.location = Location(**message_dict["location"])
-        self.category = Location(**message_dict["category"])
+        self.category = Category(**message_dict["category"])
+        return self.next_question()
 
     def next_question(self):
         if self.category.is_empty():
@@ -142,7 +129,7 @@ class RepairReportBot:
         )[0]
 
         if matchest_room != self.location.room:
-            return f"请问您指的是{matchest_building},{matchest_room}吗？"
+            return f"请问您指的是{matchest_building}的{matchest_room}吗？"
 
         if self.location.room is not None:
             possible_floors = list(set(
@@ -154,8 +141,18 @@ class RepairReportBot:
                 ]
             ))
             if len(possible_floors) > 1:
-                return f"请问您指的是{matchest_building}, {possible_floors[0]}, {matchest_room}吗？"
+                return f"请问您指的是{matchest_building}, {possible_floors[0]}的{matchest_room}吗？"
         return None
 
     def to_dict(self):
         return dict(location=self.location.to_dict(), category=self.category.to_dict())
+
+    def to_markdown(self):
+        return f"""
+- location: {self.location}
+- category: {self.category}
+"""
+
+
+if __name__ == "__main__":
+    bot = RepairReportBot()
