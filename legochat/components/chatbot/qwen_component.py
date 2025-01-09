@@ -5,8 +5,7 @@ import time
 from pathlib import Path
 
 from legochat.components import Component, register_component
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          TextIteratorStreamer)
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 
 logger = logging.getLogger("legochat")
 
@@ -28,13 +27,15 @@ class StoppableTextIteratorStreamer(TextIteratorStreamer):
             super().put(value)
 
 
-@register_component("qwen")
+@register_component("chatbot", "qwen")
 class QwenComponent(Component):
-    def __init__(self, model_name="Qwen/Qwen2.5-7B-Instruct"):
+    def __init__(self, model_name="/root/epfs/models/Qwen2.5-7B-Instruct"):
         self.model_name = model_name
 
     def setup(self):
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_name, torch_dtype="auto", device_map="auto")
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name, torch_dtype="auto", device_map="auto"
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         logger.info("Qwen model loaded")
 
@@ -86,7 +87,9 @@ Objective: Aim to provide coherent and accurate responses while ensuring that un
         )
         model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
 
-        streamer = StoppableTextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        streamer = StoppableTextIteratorStreamer(
+            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
 
         generation_kwargs = dict(model_inputs, streamer=streamer, max_new_tokens=512)
         thread = threading.Thread(target=self.generate, kwargs=generation_kwargs)

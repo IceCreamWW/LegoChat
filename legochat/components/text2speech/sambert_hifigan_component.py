@@ -22,10 +22,12 @@ def extract_tts_text(text):
     return "", text
 
 
-@register_component("sambert_hifigan")
+@register_component("text2speech", "sambert_hifigan")
 class SamBertHiFiGanComponent(Component):
 
-    def __init__(self, model_name="damo/speech_sambert-hifigan_tts_zhiyan_emo_zh-cn_16k"):
+    def __init__(
+        self, model_name="damo/speech_sambert-hifigan_tts_zhiyan_emo_zh-cn_16k"
+    ):
         self.model_name = model_name
         self.wav_header_length = 44
         self.sample_rate = 16000
@@ -37,7 +39,9 @@ class SamBertHiFiGanComponent(Component):
 
     def process_func(self, text_fifo_path, audio_fifo_path, control_pipe=None):
         text = ""
-        with open(text_fifo_path, "r", encoding="u8") as fifo_text, open(audio_fifo_path, "wb") as fifo_audio:
+        with open(text_fifo_path, "r", encoding="u8") as fifo_text, open(
+            audio_fifo_path, "wb"
+        ) as fifo_audio:
             while True:
                 text_partial = fifo_text.read(5)
                 if not text_partial:
@@ -50,10 +54,13 @@ class SamBertHiFiGanComponent(Component):
                 text += text_partial
                 tts_text, text = extract_tts_text(text)
                 if tts_text:
+                    logger.info(f"SamBert-HiFi-GAN synthesize [{tts_text}]")
                     start = time.time()
                     wav_bytes = self.tts(input=tts_text)[OutputKeys.OUTPUT_WAV]
                     end = time.time()
-                    output_seconds = len(wav_bytes[self.wav_header_length :]) / 2 / self.sample_rate
+                    output_seconds = (
+                        len(wav_bytes[self.wav_header_length :]) / 2 / self.sample_rate
+                    )
                     infernece_seconds = end - start
                     logger.debug(
                         f"SamBert-HiFi-GAN synthesize [{tts_text}][{output_seconds:.3f}s]; cost {infernece_seconds:.3f}s, rtf: {infernece_seconds / output_seconds:.3f}"

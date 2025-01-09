@@ -18,9 +18,11 @@ class Service:
 
     def build_components(self, configs):
         self.components = {}
-        for name, config in configs.items():
-            component = Component.from_config(config["name"], config.get("params", {}))
-            self.components[name] = component
+        for component_type, config in configs.items():
+            component = Component.from_config(
+                component_type, config["name"], config.get("params", {})
+            )
+            self.components[component_type] = component
         return self.components
 
     def run(self):

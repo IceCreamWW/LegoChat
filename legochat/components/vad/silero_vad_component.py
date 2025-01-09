@@ -1,10 +1,7 @@
 import logging
-import os
-from pathlib import Path
 from typing import Dict
 
 import numpy as np
-import onnxruntime
 import torch
 from legochat.components import Component, register_component
 from silero_vad import load_silero_vad
@@ -13,7 +10,7 @@ from silero_vad.utils_vad import VADIterator
 logger = logging.getLogger("legochat")
 
 
-@register_component("silero_vad")
+@register_component("vad", "silero_vad")
 class SileroVADComponent(Component):
     def __init__(self):
         pass
@@ -42,12 +39,16 @@ class SileroVADComponent(Component):
         results = []
         for i in range(0, len(samples), self.window_size_samples):
             if not end_of_stream and i + self.window_size_samples > len(samples):
-                states["buffer_samples"] = (samples[i:].numpy() * 32768.0).astype(np.int16).tobytes()
+                states["buffer_samples"] = (
+                    (samples[i:].numpy() * 32768.0).astype(np.int16).tobytes()
+                )
                 break
 
             chunk = samples[i : i + self.window_size_samples]
             if len(chunk) < self.window_size_samples:
-                chunk = torch.cat([chunk, torch.zeros(self.window_size_samples - len(chunk))])
+                chunk = torch.cat(
+                    [chunk, torch.zeros(self.window_size_samples - len(chunk))]
+                )
             speech_dict = self.vad_iterator(chunk)
             if speech_dict:
                 results.append(speech_dict)

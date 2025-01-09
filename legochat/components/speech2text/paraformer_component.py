@@ -8,17 +8,21 @@ from legochat.components import Component, register_component
 logger = logging.getLogger("legochat")
 
 
-@register_component("paraformer")
+@register_component("speech2text", "paraformer")
 class ParaformerComponent(Component):
     def __init__(self, punctuation=True):
         self.punctuation = punctuation
 
     def setup(self):
         self.speech2text_model = Paraformer(
-            "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch", batch_size=1, quantize=True
+            "damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+            batch_size=1,
+            quantize=True,
         )
         self.punctuation_model = (
-            CT_Transformer("damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch") if self.punctuation else None
+            CT_Transformer("damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch")
+            if self.punctuation
+            else None
         )
         logger.info("Paraformer model loaded")
 
@@ -29,7 +33,9 @@ class ParaformerComponent(Component):
         end_of_stream: bool = False,
     ):
         start = time.time()
-        assert prev_states is None, "Paraformer stateful processing is not supported yet"
+        assert (
+            prev_states is None
+        ), "Paraformer stateful processing is not supported yet"
         samples = np.frombuffer(samples, dtype=np.int16)
         result = self.speech2text_model(samples)
         if not result or not result[0]["preds"]:
@@ -44,7 +50,9 @@ class ParaformerComponent(Component):
         input_seconds = len(samples) / 16000
         inference_seconds = end - start
 
-        logger.debug(f"Paraformer cost {inference_seconds:.3f}s, rtf: {inference_seconds / input_seconds:.3f}")
+        logger.debug(
+            f"Paraformer cost {inference_seconds:.3f}s, rtf: {inference_seconds / input_seconds:.3f}"
+        )
         return text, None
 
 

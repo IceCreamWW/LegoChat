@@ -48,7 +48,7 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         self.fifo_path = Path(fifo_path) if fifo_path else Path(tempfile.mktemp())
         self.fifo_r = self.fifo_w = None
         self.stream_process = None
-        self.reset()
+        self.reset(False)
 
     async def read(self, size: int = -1):
         if not self.fifo_r:
@@ -71,6 +71,7 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         await asyncio.to_thread(self.fifo_w.flush)
         return size
 
+    # FIXME: make a new direcotry as workspace instead of reusing the old one
     def reset(self, start_streaming=True):
         self.close()
         self.fifo_r = self.fifo_w = None

@@ -1,6 +1,4 @@
-import asyncio
 import importlib
-import types
 from multiprocessing import Pipe, Queue
 from pathlib import Path
 
@@ -31,9 +29,9 @@ class Component:
                 pipe.send(None)
 
     @classmethod
-    def from_config(cls, component_cls_name, params):
+    def from_config(cls, component_type, component_name, params):
         queue = Queue()
-        component_cls = get_component_cls(component_cls_name)
+        component_cls = get_component_cls(component_type, component_name)
         component = component_cls(**params)
         component.queue = queue
         return component
@@ -42,16 +40,16 @@ class Component:
 component2cls = {}
 
 
-def register_component(name):
+def register_component(component_type, component_name):
     def wrapper(cls):
-        component2cls[name] = cls
+        component2cls[f"{component_type}.{component_name}"] = cls
         return cls
 
     return wrapper
 
 
-def get_component_cls(name):
-    return component2cls.get(name)
+def get_component_cls(component_type, component_name):
+    return component2cls.get(f"{component_type}.{component_name}")
 
 
 def import_components(components_dir, namespace):
@@ -63,5 +61,5 @@ def import_components(components_dir, namespace):
 
 # automatically import any Python files in the models/ directory
 models_dir = Path(__file__).parent
-for component in ["vad", "speech2text", "chatbot", "text2speech"]:
+for component in ["vad", "speech2text", "chatbot", "chatbot_slm", "text2speech"]:
     import_components(models_dir / component, f"legochat.components.{component}")

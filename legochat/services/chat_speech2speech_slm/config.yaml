@@ -1,0 +1,10 @@
+components:
+  vad: 
+    name: silero_vad
+  chatbot_slm:
+    name: openai-audio-language
+    params:
+      base_url: http://localhost:11000/v1
+  text2speech:
+    name: sambert_hifigan
+  

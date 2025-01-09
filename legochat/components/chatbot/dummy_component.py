@@ -1,17 +1,13 @@
 import logging
-import os
-import threading
 import time
 
 from legochat.components import Component, register_component
-from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          TextIteratorStreamer)
 
 logger = logging.getLogger("legochat")
 
 
-@register_component("dummy_chatbot")
-class DummyChatbotComponent(Component):
+@register_component("chatbot", "dummy")
+class DummyComponent(Component):
     def __init__(self, *args, **kwargs):
         pass
 
