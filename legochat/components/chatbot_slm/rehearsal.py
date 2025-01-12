@@ -15,8 +15,15 @@ logger = logging.getLogger("legochat")
 
 @register_component("chatbot_slm", "rehearsal")
 class RehearsalComponent(Component):
-    def __init__(self, responses: List[Dict]):
+    def __init__(
+        self,
+        responses: List[Dict],
+        overhead_seconds: float = 0.2,
+        char_delay_seconds: float = 0.01,
+    ):
         self.responses = responses
+        self.overhead_seconds = overhead_seconds
+        self.char_delay_seconds = char_delay_seconds
 
     def setup(self):
         logger.info("chatbot setup")
@@ -59,17 +66,17 @@ class RehearsalComponent(Component):
         messages,
         text_fifo_path,
         control_pipe=None,
+        scene=None,
+        ith_message=0,
         **kwargs,
     ):
-        response = "测试用这个回复," * 5
+        time.sleep(self.overhead_seconds)
+        response = self.responses[scene][ith_message]["text"]
         with open(text_fifo_path, "w") as fifo:
             for c in response:
-                logger.info(
-                    f"sending {c}",
-                )
                 fifo.write(c)
                 fifo.flush()
-                time.sleep(0.2)
+                time.sleep(self.char_delay_seconds)
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
                     if signal == "interrupt":

@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AccLM - Speech to Speech Chatbot</title>
+    <!-- Responsive design meta tag -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Include Bootstrap CSS via CDN -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+    <!-- Include Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css" />
+    <!-- Custom CSS for chat styling -->
+    <style>
+        body {
+            background-color: #343541;
+            color: #d1d5db;
+            display: flex; 
+            flex-direction: column; 
+            min-height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+            position: relative;
+            padding-top: 60px; /* Height of the navbar */
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background-color: #343541;
+            margin-bottom: 100px; /* Adjusted because we have fewer controls now */
+        }
+        .message {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .message.user {
+            justify-content: flex-end;
+        }
+        .message.assistant {
+            justify-content: flex-start;
+        }
+        .message-content {
+            max-width: 80%;
+            padding: 15px;
+            border-radius: 8px;
+            position: relative;
+            word-wrap: break-word;
+            background-color: #40414f;
+            color: #d1d5db;
+        }
+        .message.user .message-content {
+            background-color: #1e1e2a;
+            text-align: left;
+        }
+        .message.assistant .message-content {
+            background-color: #40414f;
+            text-align: left;
+        }
+
+        /* Bottom control bar (interrupt button only now) */
+        .controls-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #343541;
+            border-top: 1px solid #444654;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .left-controls {
+            display: flex;
+            align-items: center;
+        }
+
+        .listening-btn {
+            background-color: #343541;
+            color: #d1d5db;
+            border: 1px solid #d1d5db;
+            border-radius: 50%;
+            margin-right: 20px;
+        }
+        .listening-btn:hover {
+            background-color: #343541;
+            color: #d1d5db;
+        }
+
+        .action-btn {
+            background-color: #d1d5db;
+            color: #000000;
+            border: 1px solid #000000;
+            border-radius: 50px;
+            font-weight: bold;
+            padding: 10px 20px;
+        }
+
+        .audio-player {
+            margin-top: 10px;
+        }
+
+        /* Navbar adjustments */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: #343541;
+            border-bottom: 1px solid #444654;
+            min-height: 60px;
+            padding: 0 20px;
+            z-index: 1000;
+        }
+        .navbar-brand, .navbar-nav .nav-link {
+            color: #d1d5db;
+            font-size: 1.2em;
+        }
+        .navbar-nav .nav-link:hover {
+            color: #fff;
+        }
+        .navbar-toggler {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .navbar-toggler-icon {
+            background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='%23d1d5db' stroke-width='2' linecap='round' linejoin='round' d='M4 7h22M4 15h22M4 23h22'/%3E%3C/svg%3E");
+        }
+        .status-bar {
+            display: flex;
+            align-items: center;
+            color: #d1d5db;
+        }
+        .status-icon {
+            margin-right: 5px;
+        }
+        .session-count {
+            display: flex;
+            align-items: center;
+            color: #d1d5db;
+            margin-left: 15px;
+            font-size: 1em;
+        }
+        .session-count i {
+            margin-right: 5px;
+        }
+        .dropdown-menu {
+            background-color: #40414f;
+            border: none;
+        }
+        .dropdown-item {
+            color: #d1d5db;
+            padding-left: 2vw;
+        }
+        .dropdown-item:hover {
+            background-color: #565869;
+        }
+        .form-check-label {
+            margin-left: 5px;
+        }
+
+        /* scene selection dropdown */
+        .scene-select {
+            background-color: #40414f;
+            border: 1px solid #565869;
+            color: #d1d5db;
+            border-radius: 5px;
+            padding: 5px 10px;
+            margin-right: 20px;
+        }
+
+        /* Overlay styles */
+        #overlay, #lostConnectionOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.85);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: #d1d5db;
+            text-align: center;
+            padding: 20px;
+        }
+        #overlay button, #lostConnectionOverlay button {
+            margin-top: 20px;
+            background-color: #d1d5db;
+            color: #000000;
+            border: 1px solid #000000;
+            border-radius: 50px;
+            font-weight: bold;
+            padding: 15px 30px;
+            font-size: 1.2em;
+        }
+        #lostConnectionOverlay {
+            display: none;
+        }
+        #lostConnectionOverlay .overlay-content {
+            max-width: 600px;
+        }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: #565869;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #6b6d7b;
+        }
+    </style>
+</head>
+<body>
+    <!-- Overlay for user interaction -->
+    <div id="overlay">
+        <button id="startSession" class="btn overlay-btn">
+            Chat with AccLM
+        </button>
+    </div>
+
+    <!-- Lost Connection Overlay -->
+    <div id="lostConnectionOverlay">
+        <div class="overlay-content">
+            <h2>Connection Lost</h2>
+            <p>The session has ended or connection was lost. Please refresh the page to start a new session.</p>
+            <button onclick="location.reload();">Refresh Page</button>
+        </div>
+    </div>
+
+    <!-- Navbar with scene selection and detect interruption -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <a class="navbar-brand" href="#">AccLM</a>
+        <select id="sceneSelect" class="scene-select"></select>
+        <div class="form-check d-inline-block" style="margin-right: 20px;">
+            <input type="checkbox" class="form-check-input" id="allowVadInterrupt" checked>
+            <label class="form-check-label" for="allowVadInterrupt">detect interruption</label>
+        </div>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarOptions" aria-controls="navbarOptions" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarOptions">
+            <!-- Right side: Status Bar, Session Count, Microphone, Wave -->
+            <div class="navbar-text ml-auto d-flex align-items-center">
+                <div class="status-bar">
+                    <i id="statusIcon" class="fas fa-volume-mute text-danger status-icon"></i>
+                    <span id="statusText">Agent isn't speaking</span>
+                </div>
+                <div class="session-count ml-3">
+                    <i class="fas fa-user"></i> <span id="sessionCount">0</span>
+                </div>
+                <!-- Microphone and Wave at the top right -->
+                <button id="listeningToggle" class="btn listening-btn ml-3">
+                    <i id="listeningIcon" class="fas fa-microphone"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="chat-container">
+        <!-- Chat Messages -->
+        <div id="chatMessages" class="chat-messages"></div>
+
+        <!-- Controls Bar (only Interrupt button now) -->
+        <div class="controls-bar">
+            <button id="actionButton" class="btn action-btn" disabled>
+                <i id="actionButtonIcon" class="fas fa-stop"></i><span id="actionButtonText"> Interrupt</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Include jQuery and Bootstrap JS via CDN -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.min.js"></script>
+    <!-- Include hls.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <!-- Include Marked.js for Markdown rendering (version 3.0.8) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@3.0.8/marked.min.js"></script>
+
+    <script>
+        let sessionId = '';
+        let audioContext, mediaStream, audioSource, processor;
+        let agentCanSpeak = false;
+        let isSessionStarted = false;
+        let isListening = true;
+        let pollingActive = true;
+        let selectScene = '';
+        let currentMessageIndex = 0; // Track which message to fetch next
+        let partialMessageElements = {}; // Store references to partially rendered assistant messages
+
+        async function startSession() {
+            if (isSessionStarted) return; 
+            isSessionStarted = true;
+
+            document.getElementById('overlay').style.display = 'none';
+
+            const allowVadInterrupt = document.getElementById('allowVadInterrupt').checked;
+
+            // Initialize AudioContext
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            const sampleRate = audioContext.sampleRate;
+            const response = await fetch(`./start_session?allow_vad_interrupt=${allowVadInterrupt}&sample_rate=${sampleRate}`);
+            const responseData = await response.json();
+            sessionId = responseData.session_id;
+
+            initializeAudio();
+            fetchNextMessage(); // Start fetching messages one at a time
+            pollTotalSessions(); 
+        }
+
+        async function initializeAudio() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (error) {
+                alert('Microphone access denied.');
+                console.error('Error accessing microphone:', error);
+                return;
+            }
+
+            audioSource = audioContext.createMediaStreamSource(mediaStream);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+            audioSource.connect(processor);
+
+            processor.onaudioprocess = function(event) {
+                if (!isListening) return; 
+
+                const audioData = event.inputBuffer.getChannelData(0);
+                const int16Data = new Int16Array(audioData.length);
+                for (let i = 0; i < audioData.length; i++) {
+                    int16Data[i] = audioData[i] * 32767;
+                }
+                const binaryData = new Uint8Array(int16Data.buffer);
+
+                fetch(`./${sessionId}/user_audio`, {
+                    method: 'POST',
+                    body: binaryData
+                }).catch(error => console.error('Error sending audio data:', error));
+            };
+
+            processor.connect(audioContext.destination);
+            pollAgentCanSpeak();
+        }
+
+        async function pollAgentCanSpeak() {
+            let audio = new Audio();
+            audio.loop = false;
+            let hls;
+
+            audio.addEventListener('ended', async () => {
+                await fetch(`./${sessionId}/agent_finished_speaking`, { method: 'POST' });
+            });
+
+            const actionButton = document.getElementById('actionButton');
+            const actionButtonIcon = document.getElementById('actionButtonIcon');
+            const actionButtonText = document.getElementById('actionButtonText');
+
+            const intervalId = setInterval(async () => {
+                if (!pollingActive) {
+                    clearInterval(intervalId);
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`./${sessionId}/agent_can_speak`);
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    const { agent_can_speak } = await response.json();
+
+                    if (agent_can_speak && !agentCanSpeak) {
+                        const m3u8Url = `./${sessionId}/assets/agent.m3u8?time=${Date.now()}`;
+                        if (Hls.isSupported()) {
+                            if (hls) {
+                                hls.destroy();
+                            }
+                            hls = new Hls({ startPosition: 0 });
+                            hls.loadSource(m3u8Url);
+                            hls.attachMedia(audio);
+                            hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                                audio.currentTime = 0;
+                                audio.play();
+                            });
+                        } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+                            audio.src = m3u8Url;
+                            audio.play();
+                        } else {
+                            console.error('This browser does not support HLS.');
+                        }
+                    } else if (!agent_can_speak && agentCanSpeak) {
+                        if (hls) {
+                            hls.destroy();
+                            hls = null;
+                        }
+                        audio.pause();
+                        audio.currentTime = 0;
+                        audio.src = '';
+                    }
+
+                    agentCanSpeak = agent_can_speak;
+
+                    const statusIcon = document.getElementById('statusIcon');
+                    const statusText = document.getElementById('statusText');
+                    if (agentCanSpeak) {
+                        statusIcon.classList.remove('fa-volume-mute', 'text-danger');
+                        statusIcon.classList.add('fa-volume-up', 'text-success');
+                        statusText.textContent = "Agent is speaking";
+
+                        actionButton.disabled = false;
+                        actionButtonIcon.className = 'fas fa-stop';
+                        actionButtonText.textContent = ' Interrupt';
+                    } else {
+                        statusIcon.classList.remove('fa-volume-up', 'text-success');
+                        statusIcon.classList.add('fa-volume-mute', 'text-danger');
+                        statusText.textContent = "Agent isn't speaking";
+
+                        actionButton.disabled = true;
+                        actionButtonIcon.className = 'fas fa-stop';
+                        actionButtonText.textContent = ' Interrupt';
+                    }
+                } catch (error) {
+                    console.error('Error fetching agent_can_speak:', error);
+                    pollingActive = false;
+                    showLostConnectionOverlay();
+                }
+            }, 100);
+        }
+
+        // Fetch and render one message at a time
+        async function fetchNextMessage() {
+            if (!pollingActive) return;
+
+            try {
+                const response = await fetch(`./${sessionId}/chat_message?index=${currentMessageIndex}`);
+                if (response.status === 204) {
+                    // No new message yet, wait and try again
+                    setTimeout(fetchNextMessage, 500); 
+                    return;
+                }
+
+                if (!response.ok) throw new Error('Network response was not ok');
+                const msg = await response.json();
+
+                if (!msg || !msg.role) {
+                    // Unexpected response
+                    setTimeout(fetchNextMessage, 500);
+                    return;
+                }
+
+                // User messages: always audio, complete at once.
+                // Assistant messages: always text, may be partial (end=false)
+                if (msg.role === 'user') {
+                    // User message is audio and complete
+                    renderMessage(msg);
+                    currentMessageIndex++;
+                    // Proceed to next message
+                    setTimeout(fetchNextMessage, 100);
+                } else if (msg.role === 'assistant') {
+                    // Assistant message is text and may be partial
+                    if (msg.end === false) {
+                        // Partial message: render or update existing partial message
+                        renderOrUpdatePartialMessage(msg);
+                        // Don't increment index, keep polling same message index
+                        setTimeout(fetchNextMessage, 500);
+                    } else {
+                        // end = true, finalize this message
+                        renderOrUpdatePartialMessage(msg);
+                        // Now that it's ended, increment index and move to next
+                        currentMessageIndex++;
+                        setTimeout(fetchNextMessage, 100);
+                    }
+                }
+
+            } catch (error) {
+                console.error('Error fetching next message:', error);
+                pollingActive = false;
+                showLostConnectionOverlay();
+            }
+        }
+
+        function renderOrUpdatePartialMessage(msg) {
+            const messagesContainer = document.getElementById('chatMessages');
+            let messageDiv, contentDiv;
+
+            // Check if we've rendered this message before
+            // Use the currentMessageIndex as a key
+            if (!partialMessageElements[currentMessageIndex]) {
+                // Create a new element
+                messageDiv = document.createElement('div');
+                messageDiv.classList.add('message', msg.role);
+
+                contentDiv = document.createElement('div');
+                contentDiv.classList.add('message-content');
+                messageDiv.appendChild(contentDiv);
+                messagesContainer.appendChild(messageDiv);
+
+                partialMessageElements[currentMessageIndex] = contentDiv;
+            } else {
+                contentDiv = partialMessageElements[currentMessageIndex];
+            }
+
+            // Update content with the latest text chunk
+            contentDiv.innerHTML = marked.parse(msg.content || '');
+
+            // Scroll to the last message
+            setTimeout(() => {
+                messageDiv = contentDiv.parentNode;
+                messageDiv.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+
+        function renderMessage(msg) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', msg.role);
+
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('message-content');
+
+            if (msg.role === 'user') {
+                // User message is always audio
+                const audioPlayer = document.createElement('audio');
+                audioPlayer.controls = true;
+                audioPlayer.src = "data:audio/wav;base64," + msg.content[0].input_audio.data;
+                audioPlayer.classList.add('audio-player');
+                contentDiv.appendChild(audioPlayer);
+            } else if (msg.role === 'assistant') {
+                // Assistant message is text and complete
+                contentDiv.innerHTML = marked.parse(msg.content.text || '');
+            }
+
+            messageDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(messageDiv);
+
+            setTimeout(() => {
+                messageDiv.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        }
+
+        function showLostConnectionOverlay() {
+            const overlay = document.getElementById('lostConnectionOverlay');
+            overlay.style.display = 'flex';
+
+            if (processor && audioSource) {
+                audioSource.disconnect(processor);
+                processor.disconnect();
+            }
+        }
+
+        function pollTotalSessions() {
+            setInterval(async () => {
+                try {
+                    const response = await fetch(`./total_sessions`);
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    const data = await response.json();
+                    const totalSessions = data.total_sessions;
+                    document.getElementById('sessionCount').textContent = totalSessions;
+                } catch (error) {
+                    console.error('Error fetching total sessions:', error);
+                }
+            }, 1000);
+        }
+
+        document.getElementById('actionButton').addEventListener('click', () => {
+            if (agentCanSpeak) {
+                fetch(`./${sessionId}/interrupt`, { method: 'POST' });
+            }
+        });
+
+        document.getElementById('startSession').addEventListener('click', startSession);
+
+        let listeningIcon = document.getElementById('listeningIcon');
+        document.getElementById('listeningToggle').addEventListener('click', () => {
+            isListening = !isListening;
+            const waveContainer = document.getElementById('waveContainer');
+            if (isListening) {
+                listeningIcon.className = 'fas fa-microphone';
+                waveContainer.style.display = 'flex';
+            } else {
+                listeningIcon.className = 'fas fa-microphone-slash';
+                waveContainer.style.display = 'none';
+            }
+        });
+
+        document.getElementById('allowVadInterrupt').addEventListener('change', async function() {
+            const allowVadInterrupt = this.checked;
+            if (sessionId) {
+                await fetch(`./${sessionId}/update_setting`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ setting: 'allow_vad_interrupt', value: allowVadInterrupt })
+                });
+            }
+        });
+
+        window.onload = fetchScenes;
+        document.getElementById('sceneSelect').addEventListener('change', async function(e) {
+            selectedScene = e.target.value;
+            if (sessionId) {
+                await fetch(`./${sessionId}/update_setting`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ setting: 'scene', value: selectedScene })
+                });
+            }
+        });
+
+        async function fetchScenes() {
+            try {
+                const response = await fetch('./scenes');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const scenes = await response.json();
+                const sceneSelect = document.getElementById('sceneSelect');
+                scenes.forEach(m => {
+                    const option = document.createElement('option');
+                    option.value = m;
+                    option.textContent = m;
+                    sceneSelect.appendChild(option);
+                });
+                if (scenes.length > 0) {
+                    selectedScene = scenes[0];
+                }
+            } catch (error) {
+                console.error('Error fetching scenes:', error);
+            }
+        }
+
+    </script>
+</body>
+</html>
+
