@@ -311,6 +311,7 @@
             document.getElementById('overlay').style.display = 'none';
 
             const allowVadInterrupt = document.getElementById('allowVadInterrupt').checked;
+            selectedModel = document.getElementById('modelSelect').value;
 
             // Initialize AudioContext
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -319,7 +320,7 @@
             }
 
             const sampleRate = audioContext.sampleRate;
-            const response = await fetch(`./start_session?allow_vad_interrupt=${allowVadInterrupt}&sample_rate=${sampleRate}`);
+            const response = await fetch(`./start_session?allow_vad_interrupt=${allowVadInterrupt}&sample_rate=${sampleRate}&model=${selectedModel}`);
             const responseData = await response.json();
             sessionId = responseData.session_id;
 
@@ -611,8 +612,15 @@
         });
 
         window.onload = fetchModels;
-        document.getElementById('modelSelect').addEventListener('change', (e) => {
+        document.getElementById('modelSelect').addEventListener('change', async function() {
             selectedModel = e.target.value;
+            if (sessionId) {
+                await fetch(`./${sessionId}/update_setting`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ setting: 'model', value: selectedModel })
+                });
+            }
         });
 
         async function fetchModels() {

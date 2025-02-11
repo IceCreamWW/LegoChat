@@ -99,7 +99,7 @@ class OpenAIComponent(Component):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.DEBUG)
-    component = OpenAIComponent(base_url="http://localhost:11000/v1")
+    component = OpenAIComponent(base_url="http://localhost:8000/v1")
     component.setup()
 
     import soundfile as sf
@@ -112,7 +112,9 @@ if __name__ == "__main__":
         messages, audio_bytes=wav.tobytes(), sample_rate=sr
     )
     response = component.process_func(
-        messages=messages, model="Qwen/Qwen2-Audio-7B-Instruct"
+        messages=messages,
+        model="sft.align0109.qa_voiceassistant.lora6-checkpoint-4135",
+        # model="Qwen2-Audio-7B-Instruct",
     )
     messages = component.add_agent_message(messages, response)
 

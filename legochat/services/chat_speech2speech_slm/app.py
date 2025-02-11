@@ -1,9 +1,12 @@
 import asyncio
+import json
 import logging
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
 )
 logger = logging.getLogger("legochat")
 logger.setLevel(logging.INFO)
@@ -19,6 +22,8 @@ from legochat.utils.stream import FIFOAudioIOStream
 
 from backend import ChatSpeech2Speech
 
+MODELS_INFO = "/root/epfs/home/vv/workspace/VITA/workspace/deploy/models.jsonl"
+
 
 def start_background_loop(loop):
     asyncio.set_event_loop(loop)
@@ -26,7 +31,9 @@ def start_background_loop(loop):
 
 
 background_loop = asyncio.new_event_loop()
-threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True).start()
+threading.Thread(
+    target=start_background_loop, args=(background_loop,), daemon=True
+).start()
 
 
 app = Flask(__name__)
@@ -46,17 +53,27 @@ def index():
 
 @app.route("/start_session")
 def start_session():
-    allow_vad_interrupt = request.args.get("allow_vad_interrupt", "true").lower() == "true"
-    model = request.args.get("model", "Qwen/Qwen2-Audio-7B-Instruct")
-    sample_rate = int(request.args.get("sample_rate", 16000))  # default to 16kHz if not specified
+    allow_vad_interrupt = (
+        request.args.get("allow_vad_interrupt", "true").lower() == "true"
+    )
+    models = [json.loads(line) for line in open(MODELS_INFO)]
+    model_name = request.args.get("model")
+    model = next(model["name"] for model in models if model["alias"] == model_name)
+
+    sample_rate = int(
+        request.args.get("sample_rate", 16000)
+    )  # default to 16kHz if not specified
 
     session_id = uuid4().hex
     workspace = Path(f"workspace/{session_id}")
     workspace.mkdir(parents=True, exist_ok=True)
 
-    user_audio_stream = FIFOAudioIOStream(sample_rate_w=sample_rate, sample_rate_r=16000)
+    user_audio_stream = FIFOAudioIOStream(
+        sample_rate_w=sample_rate, sample_rate_r=16000
+    )
     agent_audio_output_stream = FIFOAudioIOStream(
-        sample_rate_w=service.text2speech.sample_rate, m3u8_path=workspace / "agent.m3u8"
+        sample_rate_w=service.text2speech.sample_rate,
+        m3u8_path=workspace / "agent.m3u8",
     )
 
     # Start session asynchronously
@@ -80,7 +97,10 @@ def update_setting(session_id):
     if args["setting"] == "allow_vad_interrupt":
         service.sessions[session_id].allow_vad_interrupt = args["value"]
     elif args["setting"] == "model":
-        service.sessions[session_id].model = args["value"]
+        models = [json.loads(line) for line in open(MODELS_INFO)]
+        model_name = args["value"]
+        model = next(model["name"] for model in models if model["alias"] == model_name)
+        service.sessions[session_id].model = model_name
     return "OK"
 
 
@@ -121,7 +141,7 @@ def chat_message(session_id):
     if chat_message["role"] == "user":
         chat_message["end"] = True
     else:
-        chat_message["end"] = (index < len(chat_messages) - 1)
+        chat_message["end"] = index < len(chat_messages) - 1
     return jsonify(chat_message)
 
 
@@ -140,7 +160,8 @@ async def total_sessions():
 @app.route("/<session_id>/interrupt", methods=["POST"])
 async def interrupt(session_id):
     asyncio.run_coroutine_threadsafe(
-        service.sessions[session_id].event_bus.emit(EventEnum.INTERRUPT, sender="user"), background_loop
+        service.sessions[session_id].event_bus.emit(EventEnum.INTERRUPT, sender="user"),
+        background_loop,
     )
     return "Interrupted", 200
 
@@ -149,7 +170,10 @@ async def interrupt(session_id):
 async def end_of_turn(session_id):
     # await it in backgroud loop
     asyncio.run_coroutine_threadsafe(
-        service.sessions[session_id].event_bus.emit(EventEnum.END_OF_TURN, sender="user"), background_loop
+        service.sessions[session_id].event_bus.emit(
+            EventEnum.END_OF_TURN, sender="user"
+        ),
+        background_loop,
     )
     return "End of Turn Noted", 200
 
@@ -159,9 +183,14 @@ async def test(session_id):
     await service.sessions[session_id].agent_audio_output_stream.write(8192 * b"\x00")
     return "OK"
 
+
 @app.route("/models")
 async def models():
-    return jsonify(["Qwen/Qwen2-Audio-7B-Instruct"])
+    # return jsonify(["Qwen/Qwen2-Audio-7B-Instruct"])
+    models = [json.loads(line) for line in open(MODELS_INFO)]
+    models_alias = [model["alias"] for model in models]
+    return jsonify(models_alias)
+
 
 if __name__ == "__main__":
     # certs = ("certs/cert.pem", "certs/key.pem")
