@@ -12,8 +12,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from legochat.services.service import Service
 from legochat.utils.event import EventBus, EventEnum
-from legochat.utils.stream import (AudioInputStream, AudioOutputStream,
-                                   FIFOTextIOStream)
+from legochat.utils.stream import AudioInputStream, AudioOutputStream, FIFOTextIOStream
 
 logger = logging.getLogger("legochat")
 env_file = Path(__file__).parent / ".env"
@@ -22,10 +21,13 @@ if env_file.exists():
 
 SPEECH2TEXT_MIN_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_SECONDS", "0.2"))
 SPEECH2TEXT_MAX_SECONDS = float(os.getenv("SPEECH2TEXT_MAX_SECONDS", "5.0"))
-SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(os.getenv("SPEECH2TEXT_MIN_INTERVAL_SECONDS", "0.2"))
+SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(
+    os.getenv("SPEECH2TEXT_MIN_INTERVAL_SECONDS", "0.2")
+)
 VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.3"))
 UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.6"))
 CHATBOT_MAX_MESSAGES = int(os.getenv("CHATBOT_MAX_MESSAGES", "20"))
+VAD_LEFT_SILENCE_SECONDS = 0.5
 
 
 class ChatSpeech2Speech(Service):
@@ -63,11 +65,16 @@ class ChatSpeech2SpeechSession:
         model: str,
         workspace: Optional[Path] = None,
         allow_vad_interrupt: bool = True,
+        use_tts: bool = False,
     ):
         for component in service.required_components:
             setattr(self, component, service.components[component])
 
-        self.workspace = Path(tempfile.TemporaryDirectory().name) if not workspace else Path(workspace)
+        self.workspace = (
+            Path(tempfile.TemporaryDirectory().name)
+            if not workspace
+            else Path(workspace)
+        )
         self.workspace.mkdir(parents=True, exist_ok=True)
 
         self.data = b""
@@ -86,19 +93,26 @@ class ChatSpeech2SpeechSession:
 
         self.allow_vad_interrupt = allow_vad_interrupt
         self.model = model
+        self.use_tts = use_tts
 
         self.speech2text_min_bytes = int(SPEECH2TEXT_MIN_SECONDS * self.sample_rate * 2)
         self.speech2text_max_bytes = int(SPEECH2TEXT_MAX_SECONDS * self.sample_rate * 2)
-        self.speech2text_min_interval_bytes = int(SPEECH2TEXT_MIN_INTERVAL_SECONDS * self.sample_rate * 2)
+        self.speech2text_min_interval_bytes = int(
+            SPEECH2TEXT_MIN_INTERVAL_SECONDS * self.sample_rate * 2
+        )
         self.speech2text_offset_bytes = 0
-        self.voiced_bytes_to_interrupt = int(VOICED_SECONDS_TO_INTERRUPT * self.sample_rate) * 2
+        self.voiced_bytes_to_interrupt = (
+            int(VOICED_SECONDS_TO_INTERRUPT * self.sample_rate) * 2
+        )
         self.unvoiced_bytes_to_eot = int(UNVOICED_SECONDS_TO_EOT * self.sample_rate) * 2
 
         self.event_bus = EventBus()
         self.agent_can_speak = False
         self.user_is_speaking = False
         self.event_bus.on(EventEnum.RECEIVE_ADUIO_CHUNK, self.on_receive_audio_chunk)
-        self.event_bus.on(EventEnum.UPDATE_VOICED_SEGMENTS, self.on_update_voiced_segments)
+        self.event_bus.on(
+            EventEnum.UPDATE_VOICED_SEGMENTS, self.on_update_voiced_segments
+        )
         self.event_bus.on(EventEnum.INTERRUPT, self.on_interrupt)
         self.event_bus.on(EventEnum.END_OF_TURN, self.on_end_of_turn)
 
@@ -162,7 +176,11 @@ class ChatSpeech2SpeechSession:
         # handle manual EOT when VAD has not detect eos yet
         if not last_voiced_segment["eos"]:
             self.voiced_segments.append(
-                {"start": last_voiced_segment["end"], "end": last_voiced_segment["end"], "eos": False}
+                {
+                    "start": last_voiced_segment["end"],
+                    "end": last_voiced_segment["end"],
+                    "eos": False,
+                }
             )
 
     async def detect_speech(self):
@@ -178,9 +196,18 @@ class ChatSpeech2SpeechSession:
         for result in vad_results:
             if "start" in result:
                 self.user_is_speaking = True
-                if self.voiced_segments and self.voiced_segments[-1]["end"] >= result["start"] * 2:
+                if (
+                    self.voiced_segments
+                    and self.voiced_segments[-1]["end"] >= result["start"] * 2
+                ):
                     self.voiced_segments.pop()
-                self.voiced_segments.append({"start": result["start"] * 2, "eos": False})
+                self.voiced_segments.append(
+                    {
+                        "start": result["start"] * 2
+                        - int(VAD_LEFT_SILENCE_SECONDS * 16000 * 2),
+                        "eos": False,
+                    }
+                )
             if "end" in result:
                 self.user_is_speaking = False
                 self.voiced_segments[-1]["end"] = result["end"] * 2
@@ -198,14 +225,16 @@ class ChatSpeech2SpeechSession:
         if (
             not self.agent_can_speak
             and self.voiced_segments
-            and self.last_vad_end - self.voiced_segments[-1]["end"] > self.unvoiced_bytes_to_eot
+            and self.last_vad_end - self.voiced_segments[-1]["end"]
+            > self.unvoiced_bytes_to_eot
         ):
             await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
         elif (
             self.agent_can_speak
             and self.voiced_segments
             and self.last_vad_end == self.voiced_segments[-1]["end"]
-            and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"] > self.voiced_bytes_to_interrupt
+            and self.voiced_segments[-1]["end"] - self.voiced_segments[-1]["start"]
+            > self.voiced_bytes_to_interrupt
         ):
             await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
 
@@ -221,7 +250,9 @@ class ChatSpeech2SpeechSession:
         self.chatbot_controller, chatbot_controller_child = Pipe()
         self.text2speech_controller, text2speech_controller_child = Pipe()
 
-        self.chat_messages = self.chatbot_slm.add_user_message(self.chat_messages, audio_bytes=user_speech, sample_rate=self.sample_rate)
+        self.chatbot_slm.add_user_message(
+            self.chat_messages, audio_bytes=user_speech, sample_rate=self.sample_rate
+        )
 
         if len(self.chat_messages) > CHATBOT_MAX_MESSAGES:
             self.chat_messages = self.chat_messages[-CHATBOT_MAX_MESSAGES:]
@@ -231,44 +262,72 @@ class ChatSpeech2SpeechSession:
         asyncio.create_task(
             asyncio.to_thread(
                 self.chatbot_slm.process,
-                messages=self.chat_messages,
+                messages=self.chat_messages[:],
                 text_fifo_path=chatbot_response_stream.fifo_path.as_posix(),
                 control_pipe=chatbot_controller_child,
                 model=self.model,
             )
         )
 
-        text2speech_source_stream = FIFOTextIOStream()
-        asyncio.create_task(
-            asyncio.to_thread(
-                self.text2speech.process,
-                text_fifo_path=text2speech_source_stream.fifo_path.as_posix(),
-                audio_fifo_path=self.agent_audio_output_stream.fifo_path.as_posix(),
-                control_pipe=text2speech_controller_child,
+        if self.use_tts:
+            text2speech_source_stream = FIFOTextIOStream()
+            asyncio.create_task(
+                asyncio.to_thread(
+                    self.text2speech.process,
+                    text_fifo_path=text2speech_source_stream.fifo_path.as_posix(),
+                    audio_fifo_path=self.agent_audio_output_stream.fifo_path.as_posix(),
+                    control_pipe=text2speech_controller_child,
+                )
             )
-        )
 
-        chatbot_response = ""
-        chat_messages = self.chat_messages
+            chatbot_response = ""
+            self.chatbot_slm.add_agent_message(self.chat_messages, "")
 
-        try:
-            await text2speech_source_stream.write("")  # make sure the fifo is alive
-            while True:
-                message_partial = await chatbot_response_stream.read(10)
-                if not message_partial:
-                    break
-                chatbot_response += message_partial
-                self.chat_messages = self.chatbot_slm.add_agent_message(chat_messages, chatbot_response)
-                await text2speech_source_stream.write(message_partial)
-            text2speech_source_stream.close()
-        except Exception as e:
-            self.agent_can_speak = False
-            if isinstance(e, OSError):
-                if e.errno != errno.EPIPE:
-                    raise e
-            logger.error(e)
+            try:
+                await text2speech_source_stream.write("")  # make sure the fifo is alive
+                while True:
+                    message_partial = await chatbot_response_stream.read(10)
+                    if not message_partial:
+                        break
+                    chatbot_response += message_partial
+                    self.chat_messages.pop(-1)
+                    self.chatbot_slm.add_agent_message(
+                        self.chat_messages, chatbot_response
+                    )
+                    await text2speech_source_stream.write(message_partial)
+                text2speech_source_stream.close()
+            except Exception as e:
+                self.agent_can_speak = False
+                if isinstance(e, OSError):
+                    if e.errno != errno.EPIPE:
+                        raise e
+                logger.error(e)
 
-        # chatbot has finished generating, text2speech might still be processing
-        if self.chatbot_controller:
-            self.chatbot_controller.close()
-            self.chatbot_controller = None
+            # chatbot has finished generating, text2speech might still be processing
+            if self.chatbot_controller:
+                self.chatbot_controller.close()
+                self.chatbot_controller = None
+        else:
+            chatbot_response = ""
+            self.chatbot_slm.add_agent_message(self.chat_messages, "")
+            try:
+                while True:
+                    message_partial = await chatbot_response_stream.read(10)
+                    if not message_partial:
+                        break
+                    chatbot_response += message_partial
+                    self.chat_messages.pop(-1)
+                    self.chatbot_slm.add_agent_message(
+                        self.chat_messages, chatbot_response
+                    )
+            except Exception as e:
+                self.agent_can_speak = False
+                if isinstance(e, OSError):
+                    if e.errno != errno.EPIPE:
+                        raise e
+                logger.error(e)
+
+            # chatbot has finished generating, text2speech might still be processing
+            if self.chatbot_controller:
+                self.chatbot_controller.close()
+                self.chatbot_controller = None

@@ -56,9 +56,9 @@ def start_session():
     allow_vad_interrupt = (
         request.args.get("allow_vad_interrupt", "true").lower() == "true"
     )
+    use_tts = request.args.get("use_tts", "false").lower() == "true"
     models = [json.loads(line) for line in open(MODELS_INFO)]
-    model_name = request.args.get("model")
-    model = next(model["name"] for model in models if model["alias"] == model_name)
+    model = request.args.get("model")
 
     sample_rate = int(
         request.args.get("sample_rate", 16000)
@@ -85,6 +85,7 @@ def start_session():
             agent_audio_output_stream=agent_audio_output_stream,
             allow_vad_interrupt=allow_vad_interrupt,
             model=model,
+            use_tts=use_tts,
         ),
         background_loop,
     )
@@ -97,10 +98,9 @@ def update_setting(session_id):
     if args["setting"] == "allow_vad_interrupt":
         service.sessions[session_id].allow_vad_interrupt = args["value"]
     elif args["setting"] == "model":
-        models = [json.loads(line) for line in open(MODELS_INFO)]
-        model_name = args["value"]
-        model = next(model["name"] for model in models if model["alias"] == model_name)
-        service.sessions[session_id].model = model_name
+        service.sessions[session_id].model = args["value"]
+    elif args["setting"] == "use_tts":
+        service.sessions[session_id].use_tts = args["value"]
     return "OK"
 
 
@@ -195,4 +195,4 @@ async def models():
 if __name__ == "__main__":
     # certs = ("certs/cert.pem", "certs/key.pem")
     # app.run(host="0.0.0.0", port=5555, use_reloader=False, ssl_context=certs)
-    app.run(host="0.0.0.0", port=20001, use_reloader=False)
+    app.run(host="0.0.0.0", port=20002, use_reloader=False)

@@ -4,7 +4,9 @@ components:
   speech2text:
     name: paraformer
   chatbot:
-    name: qwen
+    name: openai
+    params:
+      base_url: http://localhost:7000/v1
   text2speech:
     name: sambert_hifigan
     #     name: gptsovits

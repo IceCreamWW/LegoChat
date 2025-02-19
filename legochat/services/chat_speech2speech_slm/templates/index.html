@@ -248,6 +248,10 @@
         <a class="navbar-brand" href="#">LegoChat</a>
         <select id="modelSelect" class="model-select"></select>
         <div class="form-check d-inline-block" style="margin-right: 20px;">
+            <input type="checkbox" class="form-check-input" id="useTTS">
+            <label class="form-check-label" for="useTTS">use TTS</label>
+        </div>
+        <div class="form-check d-inline-block" style="margin-right: 20px;">
             <input type="checkbox" class="form-check-input" id="allowVadInterrupt" checked>
             <label class="form-check-label" for="allowVadInterrupt">detect interruption</label>
         </div>
@@ -311,6 +315,7 @@
             document.getElementById('overlay').style.display = 'none';
 
             const allowVadInterrupt = document.getElementById('allowVadInterrupt').checked;
+            const useTTS = document.getElementById('useTTS').checked;
             selectedModel = document.getElementById('modelSelect').value;
 
             // Initialize AudioContext
@@ -320,7 +325,7 @@
             }
 
             const sampleRate = audioContext.sampleRate;
-            const response = await fetch(`./start_session?allow_vad_interrupt=${allowVadInterrupt}&sample_rate=${sampleRate}&model=${selectedModel}`);
+            const response = await fetch(`./start_session?allow_vad_interrupt=${allowVadInterrupt}&sample_rate=${sampleRate}&model=${selectedModel}&use_tts=${useTTS}`);
             const responseData = await response.json();
             sessionId = responseData.session_id;
 
@@ -384,26 +389,32 @@
                 try {
                     const response = await fetch(`./${sessionId}/agent_can_speak`);
                     if (!response.ok) throw new Error('Network response was not ok');
-                    const { agent_can_speak } = await response.json();
+                    let { agent_can_speak } = await response.json();
+                    const useTTS = document.getElementById('useTTS').checked;
 
                     if (agent_can_speak && !agentCanSpeak) {
-                        const m3u8Url = `./${sessionId}/assets/agent.m3u8?time=${Date.now()}`;
-                        if (Hls.isSupported()) {
-                            if (hls) {
-                                hls.destroy();
-                            }
-                            hls = new Hls({ startPosition: 0 });
-                            hls.loadSource(m3u8Url);
-                            hls.attachMedia(audio);
-                            hls.on(Hls.Events.MANIFEST_PARSED, function () {
-                                audio.currentTime = 0;
+                        if (useTTS) {
+                            const m3u8Url = `./${sessionId}/assets/agent.m3u8?time=${Date.now()}`;
+                            if (Hls.isSupported()) {
+                                if (hls) {
+                                    hls.destroy();
+                                }
+                                hls = new Hls({ startPosition: 0 });
+                                hls.loadSource(m3u8Url);
+                                hls.attachMedia(audio);
+                                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                                    audio.currentTime = 0;
+                                    audio.play();
+                                });
+                            } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
+                                audio.src = m3u8Url;
                                 audio.play();
-                            });
-                        } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-                            audio.src = m3u8Url;
-                            audio.play();
-                        } else {
-                            console.error('This browser does not support HLS.');
+                            } else {
+                                console.error('This browser does not support HLS.');
+                            }
+                        }
+                        else{
+                          agent_can_speak = false;
                         }
                     } else if (!agent_can_speak && agentCanSpeak) {
                         if (hls) {
@@ -607,6 +618,17 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ setting: 'allow_vad_interrupt', value: allowVadInterrupt })
+                });
+            }
+        });
+
+        document.getElementById('useTTS').addEventListener('change', async function() {
+            const useTTS = this.checked;
+            if (sessionId) {
+                await fetch(`./${sessionId}/update_setting`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ setting: 'use_tts', value: useTTS })
                 });
             }
         });

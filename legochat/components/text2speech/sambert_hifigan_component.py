@@ -26,7 +26,8 @@ def extract_tts_text(text):
 class SamBertHiFiGanComponent(Component):
 
     def __init__(
-        self, model_name="damo/speech_sambert-hifigan_tts_zhiyan_emo_zh-cn_16k"
+        self,
+        model_name="/root/epfs/home/vv/.cache/modelscope/hub/damo/speech_sambert-hifigan_tts_zhiyan_emo_zh-cn_16k",
     ):
         self.model_name = model_name
         self.wav_header_length = 44

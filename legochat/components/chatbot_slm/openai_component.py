@@ -1,4 +1,6 @@
 import logging
+import re
+from itertools import chain
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -14,9 +16,16 @@ logger = logging.getLogger("legochat")
 
 @register_component("chatbot_slm", "openai")
 class OpenAIComponent(Component):
-    def __init__(self, base_url, api_key="token", model="Qwen/Qwen2.5-32B-Instruct"):
+    def __init__(
+        self,
+        base_url,
+        api_key="token",
+        model="Qwen/Qwen2.5-32B-Instruct",
+        transcribe=True,
+    ):
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
+        self.transcribe = transcribe
 
     def setup(self):
         logger.info("OpenAIComponent setup")
@@ -31,7 +40,6 @@ class OpenAIComponent(Component):
     ):
 
         assert text or audio_bytes, "text or audio_base64 must be provided"
-        new_messages = messages[:]
         message = {"role": "user", "content": []}
         if audio_bytes:
             audio = np.frombuffer(audio_bytes, dtype=np.int16)
@@ -46,15 +54,13 @@ class OpenAIComponent(Component):
             )
         if text:
             message["content"].append({"type": "text", "text": text})
-        new_messages.append(message)
-        return new_messages
+        messages.append(message)
+        return messages
 
     def add_agent_message(self, messages, agent_message):
-        new_messages = messages[:]
-        new_messages.append({"role": "assistant", "content": agent_message})
-        return new_messages
+        messages.append({"role": "assistant", "content": agent_message})
+        return messages
 
-    # print(completion.choices[0].message)
     def process_func(
         self,
         messages,
@@ -68,6 +74,25 @@ class OpenAIComponent(Component):
 
         model = model if model else self.model
 
+        for message in messages:
+            if message["role"] == "assistant":
+                message["content"] = re.sub(
+                    r".*\[ASR.*?\]", "", message["content"], flags=re.DOTALL
+                )
+                print(message["content"])
+
+        if self.transcribe:
+            chat_template = "{{ messages[0]['content'] }}Detect the language and recognize the speech: <|zh|>"
+            transcribe_completion = self.client.chat.completions.create(
+                model=model,
+                messages=[messages[-1]],
+                stream=True,
+                extra_body={"chat_template": chat_template},
+            )
+            transcribe_completion = chain(*[["[ASR: "], transcribe_completion, ["]\n"]])
+        else:
+            transcribe_completion = []
+
         completion = self.client.chat.completions.create(
             model=model,
             messages=messages,
@@ -76,7 +101,7 @@ class OpenAIComponent(Component):
 
         response = ""
         with open(text_fifo_path, "w") as fifo:
-            for chunk in completion:
+            for chunk in chain(transcribe_completion, completion):
                 if control_pipe and control_pipe.poll():
                     try:
                         signal = control_pipe.recv()
@@ -85,7 +110,11 @@ class OpenAIComponent(Component):
                         signal = "interrupt"
                     if signal == "interrupt":
                         break
-                response_partial = chunk.choices[0].delta.content
+                if isinstance(chunk, str):
+                    response_partial = chunk
+                else:
+                    response_partial = chunk.choices[0].delta.content
+
                 if response_partial is not None and response_partial:
                     fifo.write(response_partial)
                     fifo.flush()

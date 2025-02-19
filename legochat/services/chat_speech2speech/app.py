@@ -3,10 +3,12 @@ import logging
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
 )
 logger = logging.getLogger("legochat")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 import threading
 import time
 from pathlib import Path
@@ -26,7 +28,9 @@ def start_background_loop(loop):
 
 
 background_loop = asyncio.new_event_loop()
-threading.Thread(target=start_background_loop, args=(background_loop,), daemon=True).start()
+threading.Thread(
+    target=start_background_loop, args=(background_loop,), daemon=True
+).start()
 
 
 app = Flask(__name__)
@@ -46,17 +50,24 @@ def index():
 
 @app.route("/start_session")
 def start_session():
-    allow_vad_interrupt = request.args.get("allow_vad_interrupt", "true").lower() == "true"
+    allow_vad_interrupt = (
+        request.args.get("allow_vad_interrupt", "true").lower() == "true"
+    )
     allow_vad_eot = request.args.get("allow_vad_eot", "true").lower() == "true"
-    sample_rate = int(request.args.get("sample_rate", 16000))  # default to 16kHz if not specified
+    sample_rate = int(
+        request.args.get("sample_rate", 16000)
+    )  # default to 16kHz if not specified
 
     session_id = uuid4().hex
     workspace = Path(f"workspace/{session_id}")
     workspace.mkdir(parents=True, exist_ok=True)
 
-    user_audio_stream = FIFOAudioIOStream(sample_rate_w=sample_rate, sample_rate_r=16000)
+    user_audio_stream = FIFOAudioIOStream(
+        sample_rate_w=sample_rate, sample_rate_r=16000
+    )
     agent_audio_output_stream = FIFOAudioIOStream(
-        sample_rate_w=service.text2speech.sample_rate, m3u8_path=workspace / "agent.m3u8"
+        sample_rate_w=service.text2speech.sample_rate,
+        m3u8_path=workspace / "agent.m3u8",
     )
 
     # Start session asynchronously
@@ -139,7 +150,8 @@ async def total_sessions():
 @app.route("/<session_id>/interrupt", methods=["POST"])
 async def interrupt(session_id):
     asyncio.run_coroutine_threadsafe(
-        service.sessions[session_id].event_bus.emit(EventEnum.INTERRUPT, sender="user"), background_loop
+        service.sessions[session_id].event_bus.emit(EventEnum.INTERRUPT, sender="user"),
+        background_loop,
     )
     return "Interrupted", 200
 
@@ -148,7 +160,10 @@ async def interrupt(session_id):
 async def end_of_turn(session_id):
     # await it in backgroud loop
     asyncio.run_coroutine_threadsafe(
-        service.sessions[session_id].event_bus.emit(EventEnum.END_OF_TURN, sender="user"), background_loop
+        service.sessions[session_id].event_bus.emit(
+            EventEnum.END_OF_TURN, sender="user"
+        ),
+        background_loop,
     )
     return "End of Turn Noted", 200
 
@@ -162,4 +177,4 @@ async def test(session_id):
 if __name__ == "__main__":
     # certs = ("certs/cert.pem", "certs/key.pem")
     # app.run(host="0.0.0.0", port=5555, use_reloader=False, ssl_context=certs)
-    app.run(host="0.0.0.0", port=5555, use_reloader=False)
+    app.run(host="0.0.0.0", port=20000, use_reloader=False)

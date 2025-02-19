@@ -26,6 +26,7 @@ class Component:
                 result = self.process_func(**process_kwargs)
                 pipe.send(result)
             except Exception as e:
+                print(e)
                 pipe.send(None)
 
     @classmethod
