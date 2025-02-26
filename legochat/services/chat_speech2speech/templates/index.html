@@ -355,7 +355,8 @@
             const allowVadEot = document.getElementById('allowVadEot').checked;
 
             // Initialize AudioContext
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
 
             // Resume AudioContext if suspended
             if (audioContext.state === 'suspended') {
@@ -390,7 +391,26 @@
             processor = audioContext.createScriptProcessor(4096, 1, 1);
             audioSource.connect(processor);
 
-            // Send audio bytes to backend
+            // Queue to hold audio data
+            let audioQueue = [];
+            let isProcessing = false;
+
+            // Function to send audio data without blocking
+            async function sendAudioData() {
+                while (audioQueue.length > 0) {
+                    const data = audioQueue.shift();
+                    try {
+                        await fetch(`./${sessionId}/user_audio`, {
+                            method: 'POST',
+                            body: data
+                        });
+                    } catch (error) {
+                        console.error('Error sending audio data:', error);
+                    }
+                }
+            }
+
+            // Processor callback for audio data
             processor.onaudioprocess = function(event) {
                 if (!isListening) return; // Do nothing if not listening
 
@@ -401,11 +421,16 @@
                 }
                 const binaryData = new Uint8Array(int16Data.buffer);
 
-                // Send data without awaiting to avoid blocking
-                fetch(`./${sessionId}/user_audio`, {
-                    method: 'POST',
-                    body: binaryData
-                }).catch(error => console.error('Error sending audio data:', error));
+                // Add data to queue
+                audioQueue.push(binaryData);
+
+                // Process audio data asynchronously
+                if (!isProcessing) {
+                    isProcessing = true;
+                    sendAudioData().finally(() => {
+                        isProcessing = false;
+                    });
+                }
             };
 
             processor.connect(audioContext.destination); // Connect to avoid garbage collection
@@ -413,6 +438,9 @@
             // Start polling for agent's ability to speak
             pollAgentCanSpeak();
         }
+
+
+
 
         async function pollAgentCanSpeak() {
             // Initialize audio playback object for m3u8 stream

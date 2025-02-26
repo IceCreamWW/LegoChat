@@ -8,9 +8,7 @@ components:
     params:
       base_url: http://localhost:7000/v1
   text2speech:
-    name: streaming_tts
-    params:
-      base_url: http://localhost:3001
+    name: sambert_hifigan
     #     name: gptsovits
     #     params:
       #       speaker: om_241114_interview

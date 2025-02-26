@@ -52,3 +52,4 @@ class EventEnum(Enum):
     UPDATE_VOICED_SEGMENTS = "update_voiced_segments"
     END_OF_TURN = "end_of_turn"
     INTERRUPT = "interrupt"
+    UPDATE_TRANSCRIPT = "update_transcript"

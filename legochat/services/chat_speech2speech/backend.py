@@ -29,6 +29,7 @@ SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(
 VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.3"))
 UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.6"))
 CHATBOT_MAX_MESSAGES = int(os.getenv("CHATBOT_MAX_MESSAGES", "20"))
+VAD_LEFT_SILENCE_SECONDS = 0.5
 
 
 class ChatSpeech2Speech(Service):
@@ -41,10 +42,13 @@ class ChatSpeech2Speech(Service):
         return ["vad", "speech2text", "chatbot", "text2speech"]
 
     async def start_session(self, **session_kwargs):
-        session = ChatSpeech2SpeechSession(self, **session_kwargs)
-        self.sessions[session.session_id] = session
-        asyncio.create_task(self.heartbeat(session.session_id))
-        await session.run()
+        try:
+            session = ChatSpeech2SpeechSession(self, **session_kwargs)
+            self.sessions[session.session_id] = session
+            asyncio.create_task(self.heartbeat(session.session_id))
+            await session.run()
+        except:
+            traceback.print_exc()
 
     async def heartbeat(self, session_id):
         while True:
@@ -85,7 +89,7 @@ class ChatSpeech2SpeechSession:
         self.vad_states = None
         self.voiced_segments = []
         self.transcripts = []
-        self.chat_messages = self.chatbot.system_prompt
+        self.chat_messages = []
         self.chatbot_controller = None
         self.text2speech_controller = None
 
@@ -191,7 +195,11 @@ class ChatSpeech2SpeechSession:
                 ):
                     self.voiced_segments.pop()
                 self.voiced_segments.append(
-                    {"start": result["start"] * 2, "eos": False}
+                    {
+                        "start": result["start"] * 2
+                        - int(VAD_LEFT_SILENCE_SECONDS * 16000 * 2),
+                        "eos": False,
+                    }
                 )
             if "end" in result:
                 self.user_is_speaking = False
@@ -272,6 +280,7 @@ class ChatSpeech2SpeechSession:
     def clear_transcript(self):
         if not self.voiced_segments:
             return
+
         last_voiced_segment = self.voiced_segments[-1]
         self.voiced_segments.clear()
         self.transcripts.clear()
@@ -333,12 +342,6 @@ class ChatSpeech2SpeechSession:
                 self.chat_messages = self.chatbot.add_agent_message(
                     chat_messages, chatbot_response
                 )
-                if (
-                    self.chatbot.pending_token
-                    and self.chatbot.pending_token == chatbot_response.strip()
-                ):
-                    self.agent_can_speak = False
-                    break
                 await text2speech_source_stream.write(message_partial)
             text2speech_source_stream.close()
         except Exception as e:

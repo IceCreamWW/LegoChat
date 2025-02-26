@@ -129,6 +129,13 @@ def transcript(session_id):
     return jsonify(transcript)
 
 
+@app.route("/<session_id>/transcriptStream")
+def transcript(session_id):
+    service.sessions[session_id].event_bus.on(EventEnum.UPDATE_TRANSCRIPT, func)
+    transcript = service.sessions[session_id].transcript
+    return Response(generate(), content_type="text/event-stream")
+
+
 @app.route("/<session_id>/chat_messages")
 def chat_messages(session_id):
     chat_messages = service.sessions[session_id].chat_messages
@@ -177,4 +184,4 @@ async def test(session_id):
 if __name__ == "__main__":
     # certs = ("certs/cert.pem", "certs/key.pem")
     # app.run(host="0.0.0.0", port=5555, use_reloader=False, ssl_context=certs)
-    app.run(host="0.0.0.0", port=20000, use_reloader=False)
+    app.run(host="0.0.0.0", port=20001, use_reloader=False)
