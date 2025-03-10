@@ -21,9 +21,16 @@ def extract_tts_text(text):
 @register_component("text2speech", "streaming_tts")
 class StreamingTTSComponent(Component):
 
+    # def __init__(self, model_name2base_url):
+    #     self.model_name2base_url = model_name2base_url
+    #     self.sample_rate = 24000
     def __init__(self, base_url):
         self.base_url = base_url
         self.sample_rate = 24000
+
+    @property
+    def models(self):
+        return list(self.model_name2base_url.keys())
 
     def setup(self):
         logger.info("StreamingTTSComponent setup")
@@ -33,15 +40,13 @@ class StreamingTTSComponent(Component):
             f"{self.base_url}/tts", params={"text": text}, stream=True
         ) as response:
             for chunk in response.iter_lines():
-                if chunk:
-                    chunk = chunk.decode("utf-8")
-                    if chunk.startswith("data:"):
-                        chunk = chunk[6:]  # remove the "data:" prefix
-                        chunk = base64.b64decode(chunk)
-                        logger.info(
-                            f"Streaming TTS received chunk of size {len(chunk)} bytes"
-                        )
-                        yield chunk
+                if not chunk:
+                    continue
+                chunk = chunk.decode("utf-8")
+                if chunk.startswith("data:"):
+                    chunk = base64.b64decode(chunk[6:])
+                    logger.info(f"Streaming TTS received {len(chunk)} bytes")
+                    yield chunk
 
     def process_func(self, text_fifo_path, audio_fifo_path, control_pipe=None):
         text = ""
@@ -55,7 +60,7 @@ class StreamingTTSComponent(Component):
                 if control_pipe and control_pipe.poll():
                     signal = control_pipe.recv()
                     if signal == "interrupt":
-                        logger.debug("Streaminmg TTS process interrupted")
+                        logger.debug("Streaming TTS process interrupted")
                         break
                 text += text_partial
                 tts_text, text = extract_tts_text(text)

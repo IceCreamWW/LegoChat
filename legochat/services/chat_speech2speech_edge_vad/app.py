@@ -3,7 +3,7 @@ import logging
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
 )
@@ -82,14 +82,11 @@ def start_session():
         ),
         background_loop,
     )
-    while session_id not in service.sessions:
-        time.sleep(0.2)
     return jsonify({"session_id": session_id})
 
 
 @app.route("/<session_id>/update_setting", methods=["POST"])
 def update_setting(session_id):
-    # allow_vad interrupt; allow_vad_eot; tts_model, chatbot_model
     args = request.json
     if args["setting"] == "allow_vad_interrupt":
         service.sessions[session_id].allow_vad_interrupt = args["value"]
@@ -120,7 +117,7 @@ def clear_transcript(session_id):
 def get_session_file(session_id, filename):
     directory = service.sessions[session_id].workspace.absolute()
     while not (directory / filename).exists():
-        time.sleep(0.2)
+        time.sleep(0.1)
     logger.debug(f"Sending {directory / filename}")
     return send_from_directory(directory, filename)
 
@@ -132,12 +129,9 @@ def transcript(session_id):
     return jsonify(transcript)
 
 
-@app.route("/<session_id>/chat_messages/<last_message_idx>")
-def chat_messages(session_id, last_message_idx):
+@app.route("/<session_id>/chat_messages")
+def chat_messages(session_id):
     chat_messages = service.sessions[session_id].chat_messages
-    last_message_idx = int(last_message_idx)
-    if last_message_idx > 0:
-        chat_messages = chat_messages[last_message_idx:]
     return jsonify(chat_messages)
 
 
@@ -174,14 +168,10 @@ async def end_of_turn(session_id):
     return "End of Turn Noted", 200
 
 
-@app.route("/<session_id>/tts_models")
-async def tts_models(session_id):
-    return jsonify(service.sessions[session_id].text2speech.models)
-
-
-@app.route("/<session_id>/chatbot_models")
-async def chatbot_models(session_id):
-    return jsonify(service.sessions[session_id].chatbot.models)
+@app.route("/<session_id>/test")
+async def test(session_id):
+    await service.sessions[session_id].agent_audio_output_stream.write(8192 * b"\x00")
+    return "OK"
 
 
 if __name__ == "__main__":

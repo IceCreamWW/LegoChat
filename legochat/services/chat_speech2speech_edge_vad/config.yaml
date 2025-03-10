@@ -10,9 +10,7 @@ components:
   text2speech:
     name: streaming_tts
     params:
-      model_name2base_url:
-        xtts: http://localhost:3000
-        cosyvoice: http://localhost:3001
+      base_url: http://localhost:3002
     #     name: gptsovits
     #     params:
       #       speaker: om_241114_interview

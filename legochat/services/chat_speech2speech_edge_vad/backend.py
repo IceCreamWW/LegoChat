@@ -303,12 +303,17 @@ class ChatSpeech2SpeechSession:
             self.chat_messages, transcript
         )
 
+        if len(self.chat_messages) > CHATBOT_MAX_MESSAGES:
+            self.chat_messages = [self.chat_messages[0]] + self.chat_messages[
+                -CHATBOT_MAX_MESSAGES:
+            ]
+
         # chatbot => chatbot_response_stream => text2speech_source_stream => text2speech
         chatbot_response_stream = FIFOTextIOStream()
         asyncio.create_task(
             asyncio.to_thread(
                 self.chatbot.process,
-                messages=self.chat_messages[-CHATBOT_MAX_MESSAGES:],
+                messages=self.chat_messages,
                 text_fifo_path=chatbot_response_stream.fifo_path.as_posix(),
                 control_pipe=chatbot_controller_child,
             )

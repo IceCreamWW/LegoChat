@@ -64,7 +64,11 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
             fcntl.fcntl(fd_w, fcntl.F_SETPIPE_SZ, 1048576)
             self.fifo_w = os.fdopen(fd_w, "wb")
 
-        if self.sample_rate_r and self.sample_rate_w and self.sample_rate_w != self.sample_rate_r:
+        if (
+            self.sample_rate_r
+            and self.sample_rate_w
+            and self.sample_rate_w != self.sample_rate_r
+        ):
             data = resample_audio_bytes(data, self.sample_rate_w, self.sample_rate_r)
 
         size = await asyncio.to_thread(self.fifo_w.write, data)
@@ -99,7 +103,7 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
         self.ffmpeg_cmd.extend(["-c:a", "libmp3lame"])
         self.ffmpeg_cmd.extend(["-b:a", "128k"])
         self.ffmpeg_cmd.extend(["-f", "hls"])
-        self.ffmpeg_cmd.extend(["-hls_time", "1"])
+        self.ffmpeg_cmd.extend(["-hls_time", "0.5"])
         self.ffmpeg_cmd.extend(["-hls_list_size", "0"])
         self.ffmpeg_cmd.extend(["-hls_playlist_type", "event"])
         self.ffmpeg_cmd.extend([m3u8_path.as_posix()])
@@ -113,9 +117,13 @@ class FIFOAudioIOStream(AudioInputStream, AudioOutputStream):
             self.fifo_w.close()
 
 
-def resample_audio_bytes(audio_bytes, original_sample_rate=44100, target_sample_rate=16000):
+def resample_audio_bytes(
+    audio_bytes, original_sample_rate=44100, target_sample_rate=16000
+):
     audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-    number_of_samples = int(len(audio_data) * (target_sample_rate / original_sample_rate))
+    number_of_samples = int(
+        len(audio_data) * (target_sample_rate / original_sample_rate)
+    )
     resampled_audio = resample(audio_data, number_of_samples)
     resampled_audio = (resampled_audio * 32768.0).astype(np.int16)
     resampled_audio_bytes = resampled_audio.tobytes()

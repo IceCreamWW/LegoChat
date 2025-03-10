@@ -281,8 +281,6 @@
                             <input type="checkbox" class="form-check-input" id="allowVadEot" checked>
                             <label class="form-check-label" for="allowVadEot">detect end of turn</label>
                         </div>
-                        <select id="chatbot_model" class="setting"></select>
-                        <select id="tts_model" class="setting"></select>
                     </div>
                 </li>
             </ul>
@@ -350,6 +348,8 @@
             if (isSessionStarted) return; // Prevent multiple sessions
             isSessionStarted = true;
 
+            // Hide overlay
+            document.getElementById('overlay').style.display = 'none';
 
             const allowVadInterrupt = document.getElementById('allowVadInterrupt').checked;
             const allowVadEot = document.getElementById('allowVadEot').checked;
@@ -372,10 +372,48 @@
             pollChatMessages();
             pollTranscript(); // Start polling the transcript
             pollTotalSessions(); // Start polling total sessions
-
-            // Hide overlay
-            document.getElementById('overlay').style.display = 'none';
         }
+
+        // async function initializeAudio() {
+        //     let audioQueue = [];
+        //     let isProcessing = false;
+
+        //     async function sendAudioData() {
+        //         while (audioQueue.length > 0) {
+        //             const data = audioQueue.shift();
+        //             try {
+        //                 await fetch(`./${sessionId}/user_audio`, {
+        //                     method: 'POST',
+        //                     body: data
+        //                 });
+        //             } catch (error) {
+        //                 console.error('Error sending audio data:', error);
+        //             }
+        //         }
+        //     }
+
+        //     processor.onaudioprocess = function(event) {
+        //         if (!isListening) return; // Do nothing if not listening
+
+        //         const audioData = event.inputBuffer.getChannelData(0);
+        //         const int16Data = new Int16Array(audioData.length);
+        //         for (let i = 0; i < audioData.length; i++) {
+        //             int16Data[i] = audioData[i] * 32767;
+        //         }
+        //         const binaryData = new Uint8Array(int16Data.buffer);
+
+        //         // Add data to queue
+        //         audioQueue.push(binaryData);
+
+        //         // Process audio data asynchronously
+        //         if (!isProcessing) {
+        //             isProcessing = true;
+        //             sendAudioData().finally(() => {
+        //                 isProcessing = false;
+        //             });
+        //         }
+        //     };
+        // };
 
         async function initializeAudio() {
             // Start microphone stream
@@ -390,7 +428,7 @@
             audioSource = audioContext.createMediaStreamSource(mediaStream);
 
             // Create a processor node
-            processor = audioContext.createScriptProcessor(16384, 1, 1);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
             audioSource.connect(processor);
 
             // Queue to hold audio data
@@ -544,7 +582,8 @@
                     const response = await fetch(`./${sessionId}/transcript`);
                     if (!response.ok) throw new Error('Network response was not ok');
                     const transcript = await response.json();
-                    document.getElementById('transcriptText').value = transcript;
+                    const transcriptTextElement = document.getElementById('transcriptText');
+                    transcriptTextElement.value = transcript;
                 } catch (error) {
                     console.error('Error fetching transcript:', error);
                     pollingActive = false;
@@ -577,41 +616,35 @@
                 }
 
                 try {
-                    const messagesDisplay = messagesContainer.getElementsByClassName('message');
-                    const lastMessageIdx = messagesDisplay.length - 1;
-                    const response = await fetch(`./${sessionId}/chat_messages/${lastMessageIdx}`);
+                    const response = await fetch(`./${sessionId}/chat_messages`);
                     if (!response.ok) throw new Error('Network response was not ok');
                     const messages = await response.json();
-                    // get the last message displayed
+                    messagesContainer.innerHTML = '';
 
-                    for (let i = 0; i < messages.length; i++) {
-                        msg = messages[i];
-                        if (lastMessageIdx >= 0 && i == 0) {
-                            messagesDisplay[lastMessageIdx].children[0].innerHTML = marked.parse(msg.content);
-                            continue
+                    messages.forEach(msg => {
+                        if (msg.role === 'user' || msg.role === 'assistant') {
+                            const messageDiv = document.createElement('div');
+                            messageDiv.classList.add('message', msg.role);
+
+                            const contentDiv = document.createElement('div');
+                            contentDiv.classList.add('message-content');
+
+                            // Render Markdown content
+                            contentDiv.innerHTML = marked.parse(msg.content);
+
+                            // If assistant, add audio player
+                            if (msg.role === 'assistant' && msg.audio_url) {
+                                const audioPlayer = document.createElement('audio');
+                                audioPlayer.controls = true;
+                                audioPlayer.src = msg.audio_url;
+                                audioPlayer.classList.add('audio-player');
+                                contentDiv.appendChild(audioPlayer);
+                            }
+
+                            messageDiv.appendChild(contentDiv);
+                            messagesContainer.appendChild(messageDiv);
                         }
-                        if (msg.role != 'user' && msg.role != 'assistant') continue
-                        const messageDiv = document.createElement('div');
-                        messageDiv.classList.add('message', msg.role);
-
-                        const contentDiv = document.createElement('div');
-                        contentDiv.classList.add('message-content');
-
-                        // Render Markdown content
-                        contentDiv.innerHTML = marked.parse(msg.content);
-
-                        // If assistant, add audio player
-                        if (msg.role === 'assistant' && msg.audio_url) {
-                            const audioPlayer = document.createElement('audio');
-                            audioPlayer.controls = true;
-                            audioPlayer.src = msg.audio_url;
-                            audioPlayer.classList.add('audio-player');
-                            contentDiv.appendChild(audioPlayer);
-                        }
-
-                        messageDiv.appendChild(contentDiv);
-                        messagesContainer.appendChild(messageDiv);
-                    }
+                    });
 
                     if (isUserAtBottom) {
                         // Scroll to the last message
@@ -634,13 +667,14 @@
         function pollTotalSessions() {
             setInterval(async () => {
                 try {
-                    response = await fetch(`./total_sessions`);
+                    const response = await fetch(`./total_sessions`);
                     if (!response.ok) throw new Error('Network response was not ok');
                     const data = await response.json();
                     const totalSessions = data.total_sessions;
                     document.getElementById('sessionCount').textContent = totalSessions;
                 } catch (error) {
                     console.error('Error fetching total sessions:', error);
+                    // Handle errors if needed
                 }
             }, 1000); // Poll every 5 seconds
         }
@@ -671,7 +705,7 @@
         });
 
         // Event listeners for checkbox changes
-        document.get('allowVadInterrupt').addEventListener('change', async function() {
+        document.getElementById('allowVadInterrupt').addEventListener('change', async function() {
             const allowVadInterrupt = this.checked;
             await fetch(`./${sessionId}/update_setting`, {
                 method: 'POST',
@@ -680,25 +714,6 @@
             });
         });
 
-        // add evenet listener for all div with option class
-        document.querySelectorAll('.setting').forEach(option => {
-            option.addEventListener('change', async function() {
-                const settingKey = this.id
-                // if checkbox, then checked, if select, then value
-                if (this.type === 'checkbox'){
-                    const settingValue = this.checked
-                } else if (this.tagName === 'SELECT') {
-                    const settingValue = this.value
-                } else {
-                    console.error('Unknown setting type')
-                }
-                await fetch(`./${sessionId}/update_setting`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ setting: settingName, value: settingValue })
-                });
-            });
-        });
         document.getElementById('allowVadEot').addEventListener('change', async function() {
             const allowVadEot = this.checked;
             await fetch(`./${sessionId}/update_setting`, {
@@ -716,33 +731,6 @@
             if (processor && audioSource) {
                 audioSource.disconnect(processor);
                 processor.disconnect();
-            }
-        }
-
-        window.onload = fetchModels
-        async function fetchModels() {
-            const optionId2endpoint = {
-                'tts_model': './tts_models',
-                'chatbot_model': './chatbot_models'
-            };
-            for (const [optionId, endpoint] of Object.entries(option2endpoint)) {
-                try {
-                    const response = await fetch(endpoint);
-                    if (!response.ok) throw new Error('Network response was not ok');
-                    const models = await response.json();
-                    const modelSelect = document.getElementById(optionId);
-                    models.forEach(m => {
-                        const option = document.createElement('option');
-                        option.value = m;
-                        option.textContent = m;
-                        modelSelect.appendChild(option);
-                    });
-                    if (models.length > 0) {
-                        selectedModel = models[0];
-                    }
-                } catch (error) {
-                    console.error(`Error fetching ${option} models:`, error);
-                }
             }
         }
     </script>
