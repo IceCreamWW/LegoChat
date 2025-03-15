@@ -39,7 +39,7 @@ class ChatSpeech2Speech(Service):
 
     @property
     def required_components(self):
-        return ["vad", "speech2text", "chatbot", "text2speech"]
+        return ["vad", "denoise", "speech2text", "chatbot", "text2speech"]
 
     async def start_session(self, **session_kwargs):
         try:
@@ -105,6 +105,9 @@ class ChatSpeech2SpeechSession:
             SPEECH2TEXT_MIN_INTERVAL_SECONDS * self.sample_rate * 2
         )
         self.speech2text_offset_bytes = 0
+        self.speech2text_states = None
+        self.transcribe = self.transcribe_streaming if getattr(self.speech2text, "is_streaming", False) else self.transcribe_non_streaming
+
         self.voiced_bytes_to_interrupt = (
             int(VOICED_SECONDS_TO_INTERRUPT * self.sample_rate) * 2
         )
@@ -127,7 +130,7 @@ class ChatSpeech2SpeechSession:
         asyncio.create_task(self.detect_speech())
         try:
             while True:
-                chunk = await self.user_audio_input_stream.read(2048)
+                chunk = await self.user_audio_input_stream.read(4096)
                 if not chunk:
                     break
                 await self.event_bus.emit(EventEnum.RECEIVE_ADUIO_CHUNK, chunk)
@@ -135,6 +138,7 @@ class ChatSpeech2SpeechSession:
             traceback.print_exc()
 
     async def on_receive_audio_chunk(self, chunk: bytes):
+        chunk, _ = await asyncio.to_thread(self.denoise.process, samples=chunk)
         self.data += chunk
         await self.detect_speech()
 
@@ -160,12 +164,15 @@ class ChatSpeech2SpeechSession:
                     raise e
                 self.text2speech_controller = None
 
-    def on_end_of_turn(self, sender="user"):
+    async def on_end_of_turn(self, sender="user"):
         logger.debug(f"end of turn received from {sender}")
         if not self.allow_vad_eot and sender == "vad":
             return
         if self.agent_can_speak:
             return
+
+        await self.transcribe(end_of_stream=True)
+        self.speech2text_states = None
         transcript = self.transcript
         if not transcript.strip():
             return
@@ -203,7 +210,7 @@ class ChatSpeech2SpeechSession:
                 )
             if "end" in result:
                 self.user_is_speaking = False
-                self.voiced_segments[-1]["end"] = result["end"] * 2
+                self.voiced_segments[-1]["end"] = max(self.voiced_segments[-1]["end"], result["end"] * 2)
                 self.voiced_segments[-1]["eos"] = True
             voice_segments_updated = True
 
@@ -218,9 +225,11 @@ class ChatSpeech2SpeechSession:
         if (
             not self.agent_can_speak
             and self.voiced_segments
+            and not "eot" in self.voiced_segments[-1]
             and self.last_vad_end - self.voiced_segments[-1]["end"]
             > self.unvoiced_bytes_to_eot
         ):
+            self.voiced_segments[-1]["eot"] = True
             await self.event_bus.emit(EventEnum.END_OF_TURN, sender="vad")
         elif (
             self.agent_can_speak
@@ -231,25 +240,40 @@ class ChatSpeech2SpeechSession:
         ):
             await self.event_bus.emit(EventEnum.INTERRUPT, sender="vad")
 
-    async def transcribe(self):
+    async def transcribe_non_streaming(self, end_of_stream=False):
         """Optimization in this functions applies to simulating online
         speech2text with offline speech2text model."""
         end, eos = self.voiced_segments[-1]["end"], self.voiced_segments[-1]["eos"]
+
+        if end_of_stream:
+            logger.debug("end of stream transcribe")
+            assert eos, "received end_of_stream but eos not triggered"
+
         if end <= self.last_speech2text_end:
             return
-        if not eos:
+
+        if not eos and not end_of_stream:
             if end - self.last_speech2text_end < self.speech2text_min_interval_bytes:
                 return
             if len(self.speech) < self.speech2text_min_bytes:
                 return
+
         if len(self.speech) > self.speech2text_max_bytes:
             if self.last_speech2text_end < self.voiced_segments[-1]["start"]:
                 self.speech2text_offset_bytes = self.voiced_segments[-1]["start"]
+
         start, end = self.speech2text_offset_bytes, self.voiced_segments[-1]["end"]
         self.last_speech2text_end = max(end, self.last_speech2text_end)
-        text, _ = await asyncio.to_thread(self.speech2text.process, samples=self.speech)
+        text, self.speech2text_states = await asyncio.to_thread(self.speech2text.process, samples=self.speech, prev_states=self.speech2text_states, end_of_stream=end_of_stream)
         logger.debug(f"text from {start} to {end}: {text}")
         self.update_transcript(start, end, text)
+
+    async def transcribe_streaming(self, end_of_stream=False):
+        start, end = self.speech2text_offset_bytes, self.voiced_segments[-1]["end"]
+        text, self.speech2text_states = await asyncio.to_thread(self.speech2text.process, samples=self.speech, prev_states=self.speech2text_states, end_of_stream=end_of_stream)
+        logger.debug(f"text from {start} to {end}: {text}")
+        self.update_transcript(start, end + end_of_stream, text)
+        logger.info(f"transcript: {self.transcript}")
 
     @property
     def transcript(self):

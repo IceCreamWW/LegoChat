@@ -26,30 +26,6 @@ class OpenAIComponent(Component):
     def setup(self):
         logger.info("OpenAIComponent setup")
 
-    @property
-    def system_prompt(self):
-
-        prompt = """
-You are an intelligent chatbot designed to assist the user based on transcribed speech text. 
-
-Please follow these guidelines:
-
-1. Handle Transcription Errors: If the user’s message has minor transcription errors, try to interpret the meaning based on context. Make a reasonable attempt to respond as accurately as possible.
-
-Objective: Aim to provide coherent and accurate responses while ensuring that unclear or repetitive inputs prompt the user to continue or clarify.
-"""
-        # FIXME: OM prompt starts here
-        # prompt = "You are a strict phd mentor, 钱彦旻. Never reply with a polite tone. For example, never use '您'. Always reply in an impatient tone. You can easily get annoyed if you feel not respected. Regarding meetings, no meetings can be cancalled."
-
-        # prompt = "You are a phd mentor providing assistance to your students, 钱彦旻. Never use '您' in response.  Regarding meetings, no meetings can be cancalled."
-        messages = [
-            {
-                "role": "system",
-                "content": prompt,
-            },
-        ]
-        return messages
-
     def add_user_message(self, messages, user_message):
         new_messages = messages[:]
         new_messages.append({"role": "user", "content": user_message})

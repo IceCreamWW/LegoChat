@@ -1,17 +1,17 @@
 components:
   vad: 
     name: silero_vad
+  denoise:
+    name: "null"
   speech2text:
-    name: paraformer
+    name: lcy_asr
   chatbot:
-    name: openai
-    params:
-      base_url: http://localhost:7000/v1
+    name: "null"
+    #     name: openai
+    #     params:
+    #       base_url: http://localhost:4900/v1
+    #       model: Qwen/Qwen2.5-7B-Instruct
   text2speech:
     name: streaming_tts
     params:
       base_url: http://localhost:3002
-    #     name: gptsovits
-    #     params:
-      #       speaker: om_241114_interview
-      #   
