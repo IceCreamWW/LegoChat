@@ -10,8 +10,8 @@ from transformers import AutoTokenizer
 logger = logging.getLogger("legochat")
 
 
-@register_component("speech2text", "lcy_asr")
-class LcyAsrComponent(Component):
+@register_component("speech2text", "lcy_ast")
+class LcyAstComponent(Component):
     def __init__(self, base_url):
         self.base_url = base_url
         self.is_streaming = True # notify backend this asr is streaming model
@@ -19,7 +19,7 @@ class LcyAsrComponent(Component):
         self.cache = {}
 
     def setup(self):
-        logger.info("Lcy ASR model loaded")
+        logger.info("Lcy AST model loaded")
 
     def process_func(
         self,
@@ -41,14 +41,14 @@ class LcyAsrComponent(Component):
         chunk_bytes = samples[chunk_offset:]
 
         if end_of_stream:
-            logger.info("end of stream asr")
+            logger.info("end of stream ast")
             chunk_bytes += b"\x00" * (self.chunk_samples * 2 - len(chunk_bytes))
             del self.cache[session_id]
         else:
             if len(chunk_bytes) < self.chunk_samples * 2:
                 return text, states_
 
-        response = requests.post(f"{self.base_url}/asr/{session_id}/{int(end_of_stream)}", data=chunk_bytes, headers={"Content-Type": "application/octet-stream"})
+        response = requests.post(f"{self.base_url}/ast/{session_id}/{int(end_of_stream)}", data=chunk_bytes, headers={"Content-Type": "application/octet-stream"})
         states["chunk_offset"] = len(samples)
         text = response.json()["result"]
         states["text"] = text

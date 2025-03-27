@@ -1,5 +1,4 @@
-import argparse
-from uuid import uuid4
+from typing import Dict, List
 import asyncio
 import errno
 import logging
@@ -40,7 +39,7 @@ class ChatSpeech2Speech(Service):
 
     @property
     def required_components(self):
-        return ["vad", "denoise", "speech2text", "chatbot", "text2speech"]
+        return ["vad", "speech2text", "chatbot_slm", "text2speech"]
 
     async def start_session(self, **session_kwargs):
         try:
@@ -62,6 +61,7 @@ class ChatSpeech2Speech(Service):
 
 
 class ChatSpeech2SpeechSession:
+
     def __init__(
         self,
         service,
@@ -70,7 +70,7 @@ class ChatSpeech2SpeechSession:
         agent_audio_output_stream: AudioOutputStream,
         workspace: Optional[Path] = None,
         allow_vad_interrupt: bool = True,
-        allow_vad_eot: bool = True,
+        use_tts: bool = False,
     ):
         for component in service.required_components:
             setattr(self, component, service.components[component])
@@ -88,9 +88,9 @@ class ChatSpeech2SpeechSession:
         self.sample_rate = 16000
 
         self.vad_states = None
-        self.voiced_segments = []
+        self.voiced_segments: List[Dict] = []
         self.transcripts = []
-        self.chat_messages = []
+        self.chat_messages: List[Dict] = []
         self.chatbot_controller = None
         self.text2speech_controller = None
 
@@ -98,7 +98,7 @@ class ChatSpeech2SpeechSession:
         self.agent_audio_output_stream = agent_audio_output_stream
 
         self.allow_vad_interrupt = allow_vad_interrupt
-        self.allow_vad_eot = allow_vad_eot
+        self.use_tts = use_tts
 
         self.speech2text_min_bytes = int(SPEECH2TEXT_MIN_SECONDS * self.sample_rate * 2)
         self.speech2text_max_bytes = int(SPEECH2TEXT_MAX_SECONDS * self.sample_rate * 2)
@@ -106,9 +106,7 @@ class ChatSpeech2SpeechSession:
             SPEECH2TEXT_MIN_INTERVAL_SECONDS * self.sample_rate * 2
         )
         self.speech2text_offset_bytes = 0
-        self.speech2text_states = {"session_id": session_id}
-
-        self.chatbot_states = {"session_id": session_id}
+        self.speech2text_states = {"session_id": self.session_id}
 
         self.transcribe = self.transcribe_streaming if getattr(self.speech2text, "is_streaming", False) else self.transcribe_non_streaming
 
@@ -142,7 +140,6 @@ class ChatSpeech2SpeechSession:
             traceback.print_exc()
 
     async def on_receive_audio_chunk(self, chunk: bytes):
-        chunk, _ = await asyncio.to_thread(self.denoise.process, samples=chunk)
         self.data += chunk
         await self.detect_speech()
 
@@ -170,8 +167,6 @@ class ChatSpeech2SpeechSession:
 
     async def on_end_of_turn(self, sender="user"):
         logger.debug(f"end of turn received from {sender}")
-        if not self.allow_vad_eot and sender == "vad":
-            return
         if self.agent_can_speak:
             return
 
@@ -324,25 +319,25 @@ class ChatSpeech2SpeechSession:
                 }
             )
 
-    async def agent_speak(self, speech, transcript):
+    async def agent_speak(self, speech: bytes, transcript):
         self.chatbot_controller, chatbot_controller_child = Pipe()
         self.text2speech_controller, text2speech_controller_child = Pipe()
 
-        self.chat_messages = self.chatbot.add_user_message(
-            self.chat_messages, transcript
+        self.chat_messages = self.chatbot_slm.add_user_message(
+            self.chat_messages, audio_bytes=speech, sample_rate=self.sample_rate
         )
 
         # chatbot => chatbot_response_stream => text2speech_source_stream => text2speech
         chatbot_response_stream = FIFOTextIOStream()
         asyncio.create_task(
             asyncio.to_thread(
-                self.chatbot.process,
+                self.chatbot_slm.process,
                 messages=self.chat_messages[-CHATBOT_MAX_MESSAGES:],
                 text_fifo_path=chatbot_response_stream.fifo_path.as_posix(),
                 control_pipe=chatbot_controller_child,
-                states=self.chatbot_states
             )
         )
+
 
         control_params = {
             "session_id": self.session_id,
@@ -350,9 +345,11 @@ class ChatSpeech2SpeechSession:
             "speech": speech,
             "emotion": "default",
             "speed": "default",
+            "voice": "default",
             "text_frontend": True,
             "stream": True,
         }
+
         text2speech_source_stream = FIFOTextIOStream()
         asyncio.create_task(
             asyncio.to_thread(
@@ -374,7 +371,7 @@ class ChatSpeech2SpeechSession:
                 if not message_partial:
                     break
                 chatbot_response += message_partial
-                self.chat_messages = self.chatbot.add_agent_message(
+                self.chat_messages = self.chatbot_slm.add_agent_message(
                     chat_messages, chatbot_response
                 )
                 await text2speech_source_stream.write(message_partial)
@@ -385,6 +382,7 @@ class ChatSpeech2SpeechSession:
                 if e.errno != errno.EPIPE:
                     raise e
             logger.error(e)
+            traceback.print_exc()
 
         # chatbot has finished generating, text2speech might still be processing
         if self.chatbot_controller:

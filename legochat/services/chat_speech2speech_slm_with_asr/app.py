@@ -1,16 +1,15 @@
 import asyncio
+import json
 import logging
-import argparse
-
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
-    format="%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
 )
 logger = logging.getLogger("legochat")
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 import threading
 import time
 from pathlib import Path
@@ -22,7 +21,6 @@ from legochat.utils.event import EventEnum
 from legochat.utils.stream import FIFOAudioIOStream
 
 from backend import ChatSpeech2Speech
-
 
 def start_background_loop(loop):
     asyncio.set_event_loop(loop)
@@ -37,18 +35,8 @@ threading.Thread(
 
 app = Flask(__name__)
 
-
-parser = argparse.ArgumentParser(description="ChatSpeech2Speech")
-parser.add_argument(
-    "--config",
-    type=str,
-    default="config",
-    help="name of the config",
-)
-args = parser.parse_args()
-
 # Load configuration
-config = yaml.safe_load((Path(__file__).parent / f"{args.config}.yaml").read_text())
+config = yaml.safe_load((Path(__file__).parent / "config.yaml").read_text())
 
 # Initialize the service
 service = ChatSpeech2Speech(config)
@@ -65,7 +53,7 @@ def start_session():
     allow_vad_interrupt = (
         request.args.get("allow_vad_interrupt", "true").lower() == "true"
     )
-    allow_vad_eot = request.args.get("allow_vad_eot", "true").lower() == "true"
+
     sample_rate = int(
         request.args.get("sample_rate", 16000)
     )  # default to 16kHz if not specified
@@ -90,7 +78,6 @@ def start_session():
             user_audio_input_stream=user_audio_stream,
             agent_audio_output_stream=agent_audio_output_stream,
             allow_vad_interrupt=allow_vad_interrupt,
-            allow_vad_eot=allow_vad_eot,
         ),
         background_loop,
     )
@@ -102,8 +89,6 @@ def update_setting(session_id):
     args = request.json
     if args["setting"] == "allow_vad_interrupt":
         service.sessions[session_id].allow_vad_interrupt = args["value"]
-    elif args["setting"] == "allow_vad_eot":
-        service.sessions[session_id].allow_vad_eot = args["value"]
     return "OK"
 
 
@@ -118,7 +103,6 @@ def agent_finished_speaking(session_id):
     service.sessions.get(session_id).agent_can_speak = False
     return "OK"
 
-
 @app.route("/<session_id>/clear_transcript", methods=["POST"])
 def clear_transcript(session_id):
     service.sessions[session_id].clear_transcript()
@@ -128,11 +112,11 @@ def clear_transcript(session_id):
 @app.route("/<session_id>/assets/<filename>")
 def get_session_file(session_id, filename):
     directory = service.sessions[session_id].workspace.absolute()
-    while not (directory / filename).exists():
-        time.sleep(0.1)
+    target = directory / filename
+    while not target.exists():
+        time.sleep(0.2)
     logger.debug(f"Sending {directory / filename}")
     return send_from_directory(directory, filename)
-
 
 @app.route("/<session_id>/transcript")
 def transcript(session_id):
@@ -141,10 +125,23 @@ def transcript(session_id):
     return jsonify(transcript)
 
 
-@app.route("/<session_id>/chat_messages")
-def chat_messages(session_id):
+@app.route("/<session_id>/chat_message")
+def chat_message(session_id):
+    service.sessions[session_id].is_alive = True
     chat_messages = service.sessions[session_id].chat_messages
-    return jsonify(chat_messages)
+    index = int(request.args.get("index", -1))
+    if index < 0:
+        index = len(chat_messages) + index
+
+    if index >= len(chat_messages):
+        return "No Content", 204
+
+    chat_message = chat_messages[index]
+    if chat_message["role"] == "user":
+        chat_message["end"] = True
+    else:
+        chat_message["end"] = index < len(chat_messages) - 1
+    return jsonify(chat_message)
 
 
 @app.route("/<session_id>/user_audio", methods=["POST"])
@@ -186,7 +183,7 @@ async def test(session_id):
     return "OK"
 
 
+
 if __name__ == "__main__":
     # certs = ("certs/cert.pem", "certs/key.pem")
-    # app.run(host="0.0.0.0", port=5555, use_reloader=False, ssl_context=certs)
-    app.run(host="0.0.0.0", port=20002, use_reloader=False)
+    app.run(host="0.0.0.0", port=20001, use_reloader=False)

@@ -1,0 +1,17 @@
+components:
+  vad: 
+    name: silero_vad
+  speech2text:
+    name: paraformer
+  chatbot_slm:
+    name: openai
+    params:
+      base_url: http://localhost:4900/v1
+        #   chatbot_slm:
+        #     name: "null"
+  text2speech:
+    name: streaming_tts_hb
+    params:
+      url: "http://localhost:49999/cosyvoice/"
+      llm_url: "http://localhost:4900/v1"
+  

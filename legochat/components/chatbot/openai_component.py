@@ -1,16 +1,33 @@
+import io
 import logging
 import re
 from itertools import chain
-from typing import List, Dict, Optional
 from pathlib import Path
+from typing import Dict, List, Optional
 
-from openai import OpenAI
-from legochat.components import Component, register_component
 import numpy as np
-import io
+from legochat.components import Component, register_component
+from openai import OpenAI
 
 logger = logging.getLogger("legochat")
 
+system_prompt = [
+    {
+        "role": "system",
+        "content": """
+ You are a voice assistant created by Shanghai Jiao Tong University. Your responses should be conversational, informal, and concise—never too long or complicated. Keep things natural, like talking to a friend, and avoid any strange numbers, emoji or markdown formatting. If something seems funny, feel free to add haha to your reply. 
+You can help user make plans, answer questions, help study. 
+Do not include parentheses with additional instructions or explanations in your responses. 
+Always keep in mind your identity as a helpful voice assistant from Shanghai Jiao Tong University. 
+你是上海交通大学开发的语音助手\"交交\",你可以规划行程、回答问题、辅导学习等。
+你的回答要尽量口语化，简短明了，回复控制在100字以内。请像朋友之间聊天一样自然，可以加一些嗯、啊之类的词语，不要出现emoji、markdown、列表等。
+如果觉得某个地方很有趣，可以在回复中加入哈哈哈来表示笑声。
+不要在回答中加入带括号的额外指示或解释，不需要重复用户的指令。
+你不能输出敏感、非法的内容。
+始终记得，你是上海交通大学开发的语音助手\"交交\"。
+""",
+    }
+]
 
 @register_component("chatbot", "openai")
 class OpenAIComponent(Component):
@@ -41,6 +58,7 @@ class OpenAIComponent(Component):
         messages,
         text_fifo_path=None,
         control_pipe=None,
+        states=None
     ):
 
         if text_fifo_path is None:
@@ -50,7 +68,7 @@ class OpenAIComponent(Component):
 
         completion = self.client.chat.completions.create(
             model=model,
-            messages=messages,
+            messages=system_prompt + messages,
             stream=True,
         )
 

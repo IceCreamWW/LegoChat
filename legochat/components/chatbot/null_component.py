@@ -29,6 +29,7 @@ class NullComponent(Component):
         messages,
         text_fifo_path=None,
         control_pipe=None,
+        states=None,
     ):
         if text_fifo_path is None:
             text_fifo_path = Path("/dev/null")

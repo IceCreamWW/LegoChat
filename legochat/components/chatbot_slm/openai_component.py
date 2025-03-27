@@ -13,6 +13,23 @@ import io
 
 logger = logging.getLogger("legochat")
 
+system_prompt = [
+    {
+        "role": "system",
+        "content": """
+ You are a voice assistant created by Shanghai Jiao Tong University. Your responses should be conversational, informal, and concise—never too long or complicated. Keep things natural, like talking to a friend, and avoid any strange numbers, emoji or markdown formatting. If something seems funny, feel free to add haha to your reply. 
+You can help user make plans, answer questions, help study. 
+Do not include parentheses with additional instructions or explanations in your responses. 
+Always keep in mind your identity as a helpful voice assistant from Shanghai Jiao Tong University. 
+你是上海交通大学开发的语音助手\"交交\",你可以规划行程、回答问题、辅导学习等。
+你的回答要尽量口语化，简短明了，回复控制在100字以内。请像朋友之间聊天一样自然，可以加一些嗯、啊之类的词语，不要出现emoji、markdown、列表等。
+如果觉得某个地方很有趣，可以在回复中加入哈哈哈来表示笑声。
+不要在回答中加入带括号的额外指示或解释，不需要重复用户的指令。
+你不能输出敏感、非法的内容。
+始终记得，你是上海交通大学开发的语音助手\"交交\"。
+""",
+    }
+]
 
 @register_component("chatbot_slm", "openai")
 class OpenAIComponent(Component):
@@ -20,16 +37,13 @@ class OpenAIComponent(Component):
         self,
         base_url,
         api_key="token",
-        model="Qwen/Qwen2.5-32B-Instruct",
-        transcribe=True,
+        model="Qwen/Qwen2.5-7B-Instruct",
     ):
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
-        self.transcribe = transcribe
 
     def setup(self):
         logger.info("OpenAIComponent setup")
-        pass
 
     def add_user_message(
         self,
@@ -40,6 +54,7 @@ class OpenAIComponent(Component):
     ):
 
         assert text or audio_bytes, "text or audio_base64 must be provided"
+        messages = messages[:]
         message = {"role": "user", "content": []}
         if audio_bytes:
             audio = np.frombuffer(audio_bytes, dtype=np.int16)
@@ -58,13 +73,13 @@ class OpenAIComponent(Component):
         return messages
 
     def add_agent_message(self, messages, agent_message):
+        messages = messages[:]
         messages.append({"role": "assistant", "content": agent_message})
         return messages
 
     def process_func(
         self,
         messages,
-        model=None,
         text_fifo_path=None,
         control_pipe=None,
     ):
@@ -72,36 +87,17 @@ class OpenAIComponent(Component):
         if text_fifo_path is None:
             text_fifo_path = Path("/dev/null")
 
-        model = model if model else self.model
-
-        for message in messages:
-            if message["role"] == "assistant":
-                message["content"] = re.sub(
-                    r".*\[ASR.*?\]", "", message["content"], flags=re.DOTALL
-                )
-                print(message["content"])
-
-        if self.transcribe:
-            chat_template = "{{ messages[0]['content'] }}Detect the language and recognize the speech: <|zh|>"
-            transcribe_completion = self.client.chat.completions.create(
-                model=model,
-                messages=[messages[-1]],
-                stream=True,
-                extra_body={"chat_template": chat_template},
-            )
-            transcribe_completion = chain(*[["[ASR: "], transcribe_completion, ["]\n"]])
-        else:
-            transcribe_completion = []
+        model = self.model
 
         completion = self.client.chat.completions.create(
             model=model,
-            messages=messages,
+            messages=system_prompt + messages,
             stream=True,
         )
 
         response = ""
         with open(text_fifo_path, "w") as fifo:
-            for chunk in chain(transcribe_completion, completion):
+            for chunk in chain(completion):
                 if control_pipe and control_pipe.poll():
                     try:
                         signal = control_pipe.recv()

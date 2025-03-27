@@ -29,13 +29,11 @@ class ParaformerComponent(Component):
     def process_func(
         self,
         samples: bytes,
-        prev_states: dict = None,
         end_of_stream: bool = False,
+        states: dict = None,
     ):
         start = time.time()
-        assert (
-            prev_states is None
-        ), "Paraformer stateful processing is not supported yet"
+        # assert (states is None), "Paraformer stateful processing is not supported yet"
         samples = np.frombuffer(samples, dtype=np.int16)
         result = self.speech2text_model(samples)
         if not result or not result[0]["preds"]:

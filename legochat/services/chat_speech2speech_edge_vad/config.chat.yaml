@@ -1,0 +1,24 @@
+components:
+  vad: 
+    name: silero_vad
+  denoise:
+    name: "null"
+  speech2text:
+    # name: "lcy_asr"
+    #     params:
+    #       base_url: http://localhost:3000
+    name: paraformer
+  chatbot:
+    # name: "lcy_ast"
+    #     params:
+    #       base_url: http://localhost:3000
+    name: openai
+    params:
+      base_url: http://localhost:4900/v1
+      model: Qwen/Qwen2.5-7B-Instruct
+  text2speech:
+    # name: "null"
+    name: streaming_tts_hb
+    params:
+      url: "http://localhost:49999/cosyvoice/"
+      llm_url: "http://localhost:4900/v1"

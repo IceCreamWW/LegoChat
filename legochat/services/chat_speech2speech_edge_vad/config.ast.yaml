@@ -1,0 +1,13 @@
+components:
+  vad: 
+    name: silero_vad
+  denoise:
+    name: "null"
+  speech2text:
+    name: "lcy_ast"
+    params:
+      base_url: http://localhost:3000
+  chatbot:
+    name: "null"
+  text2speech:
+    name: "null"
