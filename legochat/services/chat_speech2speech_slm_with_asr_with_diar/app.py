@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import sys
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
@@ -36,7 +37,7 @@ threading.Thread(
 app = Flask(__name__)
 
 # Load configuration
-config = yaml.safe_load((Path(__file__).parent / "config.yaml").read_text())
+config = yaml.safe_load(open(sys.argv[1], "r"))
 
 # Initialize the service
 service = ChatSpeech2Speech(config)
@@ -184,6 +185,4 @@ async def test(session_id):
 
 
 
-if __name__ == "__main__":
-    # certs = ("certs/cert.pem", "certs/key.pem")
-    app.run(host="0.0.0.0", port=20002, use_reloader=False)
+app.run(host="0.0.0.0", port=int(sys.argv[2]), use_reloader=False)

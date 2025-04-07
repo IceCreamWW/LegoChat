@@ -6,258 +6,54 @@
   <title>Voice Chat App with Microphone Waveform Animation</title>
   <!-- Bootstrap CSS -->
   <link rel="stylesheet" href="./{{ url_for('static', filename='bootstrap.min.css') }}">
+  <link rel="stylesheet" href="./{{ url_for('static', filename='all.min.css') }}">
   <link rel="stylesheet" href="./{{ url_for('static', filename='bg.css') }}">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <style>
-    body {
-      background: #f8f9fa;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100dvh;
-      margin: 0;
-    }
-    .chat-container {
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    /* Transcript toggle (top right) */
-    .transcript-toggle {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      font-size: 1.5rem;
-      cursor: pointer;
-      z-index: 10;
-    }
-    /* Transcript container */
-    .transcript {
-      position: absolute;
-      top: 50px;
-      right: 10px;
-      width: 40%;
-      max-width: 150px;
-      background: #f1f1f1;
-      border-radius: 10px;
-      padding: 10px;
-      display: none;
-      z-index: 10;
-      font-size: 0.8rem;
-      overflow-y: auto;
-      max-height: 50%;
-
-    }
-    /* Center animated circle (updated via JS) */
-    .circle {
-      border-radius: 50%;
-      top: 20dvh;
-      aspect-ratio: 1;
-      transform: scale(0.9);
-      transition: transform 0.3s linear;
-      overflow: hidden;
-      position: relative;
-      box-shadow: 0 0 40px rgba(255, 255, 255, 0.2);
-    }
-    /* Green new call button */
-    .call-btn {
-      position: relative;
-      top: 35dvh;
-      font-size: 2.5rem;
-      color: #28a745;
-      background: white;
-      border: none;
-      border-radius: 50%;
-      width: 20dvw;
-      aspect-ratio: 1;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-    }
-    /* Red hangup button */
-    .hangup-btn {
-      position: relative;
-      top: 35dvh;
-      left: 5vw;
-      font-size: 2.5rem;
-      color: #FE3A2E;
-      background: white;
-      width: 20vw;
-      float: left;
-      aspect-ratio: 1;
-      border: none;
-      border-radius: 50%;
-      display: none;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      z-index: 20
-    }
-    /* Microphone toggle button */
-    .mic-toggle-btn {
-      position: relative;
-      width: 20vw;
-      right: 5vw;
-      top: 35dvh;
-      float: right;
-      aspect-ratio: 1;
-      font-size: 2.5rem;
-      /* color: #FE3A2E; */
-      color: black;
-      background: white;
-      border: none;
-      border-radius: 50%;
-      display: none;
-      justify-content: center;
-      align-items: center;
-      cursor: pointer;
-      z-index: 20
-    }
-    .status-text {
-        position: absolute;
-        display: block;
-        text-align: center;
-        top: 76dvh;
-        z-index: 10;
-        color: rgba(0,0,0,0.6);
-        font-size: 1.5rem;
-        display: none;
-    }
-
-    .avatar {
-      transform: scale(0.8);
-      position: relative;
-      z-index: 100;
-    }
-    /* Overlay styles */
-    #overlay, #lostConnectionOverlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0,0,0,0.85);
-        z-index: 1000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-direction: column;
-        color: #d1d5db;
-        text-align: center;
-        padding: 20px;
-    }
-    #overlay button, #lostConnectionOverlay button {
-        margin-top: 20px;
-        background-color: #d1d5db;
-        color: #000000;
-        border: 1px solid #000000;
-        border-radius: 50px;
-        font-weight: bold;
-        padding: 15px 30px;
-        font-size: 1.2em;
-    }
-    #lostConnectionOverlay {
-        display: none;
-    }
-    #lostConnectionOverlay .overlay-content {
-        max-width: 600px;
-    }
-    /* Scrollbar styling */
-    ::-webkit-scrollbar {
-        width: 8px;
-    }
-    ::-webkit-scrollbar-thumb {
-        background-color: #565869;
-        border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background-color: #6b6d7b;
-    }
-
-    .background-moving {
-      position: absolute;
-      top: -100%;
-      left: -100%;
-      width: 400%;
-      height: 400%;
-      background: url("./{{url_for('static', filename='bg.jpg')}}");
-      background-size: 100% 100%;
-      animation: moveGradient 8s linear infinite;
-    }
-
-    @keyframes moveGradient {
-      0% {
-        transform: translate(-20%, 20%);
-      }
-      8% {
-        transform: translate(-30%, 5%);
-      }
-      16% {
-        transform: translate(-40%, -5%);
-      }
-      24% {
-        transform: translate(-50%, -20%);
-      }
-      32% {
-        transform: translate(-40%, -30%);
-      }
-      40% {
-        transform: translate(-30%, -40%);
-      }
-      48% {
-        transform: translate(-20%, -50%);
-      }
-      56% {
-        transform: translate(-10%, -40%);
-      }
-      64% {
-        transform: translate(5%, -30%);
-      }
-      72% {
-        transform: translate(20%, -20%);
-      }
-      80% {
-        transform: translate(5%, -5%);
-      }
-      88% {
-        transform: translate(-10%, 5%);
-      }
-      100% {
-        transform: translate(-20%, 20%);
-      }
-    }
-
-  </style>
+  <link rel="stylesheet" href="./{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="chat-container relative mx-auto w-100 h-100 max-w-full overflow-hidden bg-gradient-to-br from-[--color-a] via-[--color-b] to-[--color-c] text-white duration-500 ease-in [transition-property:_--color-a,_--color-b,_--color-c] before:absolute before:left-[20%] before:top-[10%] before:h-[50%] before:w-[70%] before:origin-[60%] before:animate-blob before:bg-gradient-to-br before:from-[--color-a] before:to-[--color-b] before:blur-[50px] before:brightness-125 after:absolute after:left-[40%] after:top-[30%] after:h-[80%] after:w-[70%] after:origin-[60%] after:animate-blob-reverse after:bg-gradient-to-br after:from-[--color-a] after:to-[--color-b] after:blur-[50px] after:brightness-125" style="--color-a: rgb(51, 153, 255, 0.3); --color-b: rgb(244, 229, 77, 0.3); --color-c: rgb(255, 170, 51, 0.3)">
-    <!-- Transcript section -->
-    <div class="transcript" id="transcript">
-      <p><strong>User:</strong> Hello!</p>
-      <p><strong>Agent:</strong> Hi there, how can I help?</p>
-    </div>
-    <!-- Transcript toggle icon -->
-    <div class="transcript-toggle" id="transcriptToggle">
-      <i class="fas fa-comments"></i>
-    </div>
-    <!-- Center animated circle -->
-    <div class="circle mx-auto w-75" id="agentCircle">
-        <div class="background-moving"></div>
-        <div class="avatar"><img src="./{{url_for('static', filename='default-female.png')}}"/></div>
-    </div>
-    <!-- New call button (green) -->
-    <button class="mx-auto call-btn" id="newCallBtn">
-      <i class="fas fa-phone"></i>
-    </button>
+    <div class="d-flex mx-auto justify-content-between aspect-[9/16] flex-column mw-100 mh-100">
+    <!-- <div class="logo" id="logo"> <img src="./{{ url_for('static', filename='logo.png') }}"/> </div> -->
+      <!-- Transcript section -->
+      <div class="transcript" id="transcript">
+        <p><strong>User:</strong> Hello!</p>
+        <p><strong>Agent:</strong> Hi there, how can I help?</p>
+      </div>
+      <!-- Transcript toggle icon -->
+      <div class="transcript-toggle" id="transcriptToggle">
+        <i class="fas fa-comments"></i>
+      </div>
+      <!-- Center animated circle -->
+      <div class="circle mx-auto w-75" id="agentCircle">
+          <div class="background-moving"></div>
+          <div class="avatar"><img id="agentAvatar" src="./{{url_for('static', filename='agent_avatar/default.png')}}"/></div>
+      </div>
+      <!-- New call button (green) -->
+      <div class="px-4 py-5 w-100 flex items-center justify-center" id="idleControls">
+        <button class="call-btn w-25" id="newCallBtn">
+          <i class="fas fa-phone fa-fw"></i>
+        </button>
+      </div>
 
-    <div class="w-100 status-text" id="statusText">Listening</div>
-    <!-- Hangup button (red) -->
-    <button class="hangup-btn" id="hangupBtn">
-      <i class="fas fa-xmark"></i>
-    </button>
-    <!-- Microphone toggle button -->
-    <button class="mic-toggle-btn" id="micToggleBtn">
-      <i class="fas fa-microphone"></i>
-    </button>
+      <div class="px-4 py-5 w-100 d-flex justify-content-between d-none" id="chatControls">
+      <!-- Hangup button (red) -->
+        <button class="hangup-btn w-25" id="hangupBtn">
+          <i class="fas fa-xmark fa-fw"></i>
+        </button>
+        <div class="d-flex flex-column justify-content-around">
+          <div class="d-flex justify-content-center" id="micViz">
+            <div></div>
+            <div></div>
+            <div></div>
+          </div>
+          <div class="status-text" id="statusText">Listening</div>
+        </div>
+        <!-- Microphone toggle button -->
+        <button class="mic-toggle-btn w-25" id="micToggleBtn">
+          <i class="fas fa-microphone fa-fw"></i>
+        </button>
+      </div>
+    </div>
     <!-- Animated voice dots -->
   </div>
 
@@ -272,11 +68,59 @@
     let microphoneStream;
     let animationFrameId;
     let sessionId = '';
-    let audioContext, mediaStream, audioSource, processor;
+    let audioContext, mediaStream, audioSource, processor, agentAudio;
     let agentCanSpeak = false;
     let isSessionStarted = false;
     let isListening = true;
     let pollingActive = true;
+    let agentSpekaer = "default";
+    let speaker2avatar = {
+      "default": "./{{url_for('static', filename='agent_avatar/default.png')}}",
+      "female": "./{{url_for('static', filename='agent_avatar/female.png')}}",
+      "male": "./{{url_for('static', filename='agent_avatar/male.png')}}",
+      "nezha": "./{{url_for('static', filename='agent_avatar/nezha.png')}}",
+      "taiyi": "./{{url_for('static', filename='agent_avatar/taiyi.png')}}",
+      "aobing": "./{{url_for('static', filename='agent_avatar/aobing.png')}}",
+      "self": "./{{url_for('static', filename='agent_avatar/logo.png')}}",
+    }
+
+    class AudioVisualizer {
+      constructor(audioContext, processFrame, processError, stream) {
+        this.audioContext = audioContext;
+        this.processFrame = processFrame;
+        this.connectStream = this.connectStream.bind(this);
+        // navigator.mediaDevices.getUserMedia({ audio: true, video: false }).
+        // then(this.connectStream).
+        try {
+          this.connectStream(stream);
+        } catch (e) {
+          processError();
+        }
+      }
+
+      connectStream(stream) {
+        this.analyser = this.audioContext.createAnalyser();
+        const source = this.audioContext.createMediaStreamSource(stream);
+        source.connect(this.analyser);
+        this.analyser.smoothingTimeConstant = 0.5;
+        this.analyser.fftSize = 32;
+
+        this.initRenderLoop(this.analyser);
+      }
+
+      initRenderLoop() {
+        const frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+        const processFrame = this.processFrame || (() => {});
+
+        const renderFrame = () => {
+          this.analyser.getByteFrequencyData(frequencyData);
+          processFrame(frequencyData);
+
+          requestAnimationFrame(renderFrame);
+        };
+        requestAnimationFrame(renderFrame);
+      }
+    }
 
     $(document).ready(function() {
       // Toggle transcript display when the transcript icon is clicked
@@ -286,15 +130,20 @@
 
       // On new call button click: start microphone capture and animation
       $('#newCallBtn').click(function() {
-        $(this).hide();
-        $('#hangupBtn, #micToggleBtn, #statusText').show();
+        $('#idleControls').addClass('d-none');
+        $('#chatControls').removeClass('d-none');
         startSession();
       });
 
       // On hangup button click: stop microphone capture and reset UI
       $('#hangupBtn').click(function() {
-        $('#hangupBtn, #micToggleBtn, #statusText').hide();
-        $('#newCallBtn').show();
+        if (agentAudio) {
+          agentAudio.pause();
+          agentCanSpeak = false;
+        }
+
+        $('#chatControls').addClass('d-none');
+        $('#idleControls').removeClass('d-none');
         // Reset UI elements
         $('#agentCircle').css('transform', 'scale(.9)');
         stopSession();
@@ -309,7 +158,7 @@
           $(this).css('color', '#FE3A2E');
         } else {
           $(this).html('<i class="fas fa-microphone"></i>');
-          $(this).css('color', '#black');
+          $(this).css('color', 'black');
         }
       });
     });
@@ -374,10 +223,60 @@
         const responseData = await response.json();
         sessionId = responseData.session_id;
 
-        initializeAudio();
+        await initializeAudio();
+        visualizeMicrophone();
+        // visualizeAgent(audioContext, mediaStream);
         pollTranscript();
     }
 
+
+
+  function visualizeMicrophone() {
+    const visualValueCount = 3;
+    let visualElements = document.querySelectorAll('#micViz div');
+    const init = () => {
+      const dataMap = { 0: 8, 1: 10, 2: 9};
+      const processFrame = data => {
+        const values = Object.values(data);
+        let i;
+        for (i = 0; i < visualValueCount; ++i) {
+          const value = Math.min(3, values[dataMap[i]] / 255 * 5 + 1);
+          const elmStyles = visualElements[i].style;
+          elmStyles.transform = `scaleY( ${value} )`;
+          // elmStyles.opacity = Math.max(.25, value);
+        }
+      };
+      const processError = () => {
+        visualMainElement.classList.add('error');
+        visualMainElement.innerText = 'Please allow access to your microphone in order to see this demo.\nNothing bad is going to happen... hopefully :P';
+      };
+      const a = new AudioVisualizer(audioContext, processFrame, processError, mediaStream);
+    }
+    init();
+  };
+
+  function visualizeAgent(agentAudioContext, agentMeidaStream) {
+    let visualElement = document.querySelector('#agentCircle');
+    const init = () => {
+      const processFrame = data => {
+        const elmStyles = visualElement.style;
+        if (!agentCanSpeak) {
+          elmStyles.transform = "scale(0.9)";
+          return;
+        };
+        const values = Object.values(data);
+        const value = Math.max(0.7, .9 - values[0] / 2 / 255)
+        elmStyles.transform = `scale( ${value} )`;
+      };
+      const processError = () => {
+        visualMainElement.classList.add('error');
+        visualMainElement.innerText = 'Please allow access to your microphone in order to see this demo.\nNothing bad is going to happen... hopefully :P';
+      };
+      // const a = new AudioVisualizer(audioContext, processFrame, processError, agentMeidaStream);
+      const a = new AudioVisualizer(audioContext, processFrame, processError, mediaStream);
+    }
+    init();
+  };
 
     async function initializeAudio() {
         // Start microphone stream
@@ -443,16 +342,13 @@
     }
     async function pollAgentCanSpeak() {
         let audio = new Audio();
+        agentAudio = audio;
         audio.loop = false;
         let hls;
 
         audio.addEventListener('ended', async () => {
             await fetch(`./${sessionId}/agent_finished_speaking`, { method: 'POST' });
         });
-
-        const actionButton = document.getElementById('actionButton');
-        const actionButtonIcon = document.getElementById('actionButtonIcon');
-        const actionButtonText = document.getElementById('actionButtonText');
 
         const intervalId = setInterval(async () => {
             if (!pollingActive) {
@@ -475,43 +371,10 @@
                         hls.loadSource(m3u8Url);
                         hls.attachMedia(audio);
                         hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                            const agentMeidaStream = audio.captureStream();
+                            visualizeAgent(audioContext, agentMeidaStream);
                             audio.currentTime = 0;
                             audio.play();
-
-                            // Setup Web Audio API
-                            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                            const source = audioCtx.createMediaElementSource(audio);
-                            const analyser = audioCtx.createAnalyser();
-                            analyser.fftSize = 256;
-
-                            const bufferLength = analyser.frequencyBinCount;
-                            const dataArray = new Uint8Array(bufferLength);
-
-                            source.connect(analyser);
-                            analyser.connect(audioCtx.destination);
-
-                            function animate() {
-                              requestAnimationFrame(animate);
-
-                              analyser.getByteTimeDomainData(dataArray);
-
-                              // Compute amplitude (RMS)
-                              let sum = 0;
-                              for (let i = 0; i < bufferLength; i++) {
-                                const val = (dataArray[i] - 128) / 128;
-                                sum += val * val;
-                              }
-                              const rms = Math.sqrt(sum / bufferLength);
-
-                              // Normalize and scale
-                              const scale = 0.9 - rms; // base scale 1, max around 4
-
-                              // alert(scale)
-                              // Apply transform
-                              $("#agentCircle").css('transform', `scale(${scale})`);
-                            }
-
-                            animate()
                         });
                     } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
                         audio.src = m3u8Url;
@@ -540,6 +403,26 @@
                 }
             } catch (error) {
                 console.error('Error fetching agent_can_speak:', error);
+                pollingActive = false;
+                showLostConnectionOverlay();
+            }
+
+            try {
+                const response = await fetch(`./${sessionId}/agent_speaker`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                let { agent_speaker } = await response.json();
+                if (agent_speaker !== agentSpekaer) {
+                    agentSpekaer = agent_speaker;
+                    const avatarSrc = speaker2avatar[agent_speaker];
+                    if (avatarSrc) {
+                        $('#agentAvatar').attr('src', avatarSrc);
+                    } else {
+                        console.error(`No avatar found for speaker: ${agent_speaker}`);
+                    }
+                  console.log(agent_speaker);
+                }
+            } catch (error) {
+                console.error('Error fetching transcript:', error);
                 pollingActive = false;
                 showLostConnectionOverlay();
             }

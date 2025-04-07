@@ -27,6 +27,7 @@ class Component:
                 pipe.send(result)
             except Exception as e:
                 import traceback
+
                 traceback.print_exc()
                 pipe.send(None)
 
@@ -63,5 +64,13 @@ def import_components(components_dir, namespace):
 
 # automatically import any Python files in the models/ directory
 models_dir = Path(__file__).parent
-for component in ["vad",  "denoise", "speech2text", "chatbot", "chatbot_slm", "text2speech"]:
+for component in [
+    "vad",
+    "denoise",
+    "diarization",
+    "speech2text",
+    "chatbot",
+    "chatbot_slm",
+    "text2speech",
+]:
     import_components(models_dir / component, f"legochat.components.{component}")

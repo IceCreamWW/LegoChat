@@ -2,6 +2,11 @@ import asyncio
 import json
 import logging
 
+import os
+
+PORT = int(os.environ.get("PORT", 20003))
+os.environ["PORT"] = str(PORT)
+
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -21,6 +26,7 @@ from legochat.utils.event import EventEnum
 from legochat.utils.stream import FIFOAudioIOStream
 
 from backend import ChatSpeech2Speech
+
 
 def start_background_loop(loop):
     asyncio.set_event_loop(loop)
@@ -98,10 +104,24 @@ def agent_can_speak(session_id):
     return jsonify({"agent_can_speak": can_speak})
 
 
+@app.route("/<session_id>/agent_speaker")
+def agnet_speaker(session_id):
+    agent_speaker = service.sessions.get(session_id).agent_speaker
+    return jsonify({"agent_speaker": agent_speaker})
+
+
+@app.route("/<session_id>/set_agent_speaker", methods=["POST"])
+def set_agnet_speaker(session_id):
+    args = request.json
+    service.sessions[session_id].agent_speaker = args["agent_speaker"]
+    return "OK"
+
+
 @app.route("/<session_id>/agent_finished_speaking", methods=["POST"])
 def agent_finished_speaking(session_id):
     service.sessions.get(session_id).agent_can_speak = False
     return "OK"
+
 
 @app.route("/<session_id>/clear_transcript", methods=["POST"])
 def clear_transcript(session_id):
@@ -117,6 +137,7 @@ def get_session_file(session_id, filename):
         time.sleep(0.2)
     logger.debug(f"Sending {directory / filename}")
     return send_from_directory(directory, filename)
+
 
 @app.route("/<session_id>/transcript")
 def transcript(session_id):
@@ -183,7 +204,6 @@ async def test(session_id):
     return "OK"
 
 
-
 if __name__ == "__main__":
     # certs = ("certs/cert.pem", "certs/key.pem")
-    app.run(host="0.0.0.0", port=20002, use_reloader=False)
+    app.run(host="0.0.0.0", port=PORT, use_reloader=False)

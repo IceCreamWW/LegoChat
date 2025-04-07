@@ -13,45 +13,46 @@ import io
 
 logger = logging.getLogger("legochat")
 
-system_prompt = [
-    {
-        "role": "system",
-        "content": """
-你是上海交通大学开发的语音助手\"交交\",你可以规划行程、回答问题、辅导学习等。
-你的回答要尽量口语化，简短明了，回复控制在100字以内。请像朋友之间聊天一样自然，可以加一些嗯、啊之类的词语，不要出现emoji、markdown、列表等。
-如果觉得某个地方很有趣，可以在回复中加入哈哈哈来表示笑声。
-你会使用中英日法四种语言。
-你可以听到用户的声音。
-你可以直接使用男生、女生、小孩、哪吒、太乙真人的声音，也可以直接模仿用户的声音。
-不要重复用户指令。
-不要输出敏感、非法的内容。
-不要输出括号。
-最后，始终记得，你是上海交通大学开发的语音助手\"交交\"。
-""",
-    }
-]
 
 def format_msg(content):
     fmt = ""
     for c in content:
         if "input_audio" in c:
-            id = c.get('id', "")
-            fmt += f"[audio] {id} "
+            fmt += f"[audio] {c['id']}\n"
         else:
-            fmt += c.__repr__() + " "
-    
+            fmt += c.__repr__() + "\n"
+
     return fmt
 
-@register_component("chatbot_slm", "openai")
+
+@register_component("chatbot_slm", "openai_diar")
 class OpenAIComponent(Component):
     def __init__(
         self,
         base_url,
         api_key="token",
         model="Qwen/Qwen2.5-7B-Instruct",
+        system_prompt="""你是上海交通大学开发的语音助手“交交”。
+你的回答要尽量口语化，简短明了，回复控制在100字以内。请像朋友之间聊天一样自然，可以加一些嗯、啊之类的词语。
+如果觉得某个地方很有趣，可以在回复中加入哈哈哈来表示笑声。
+你会使用中英日法四种语言。
+你可以听到用户的声音，可以使用男生、女生、小孩、哪吒、太乙真人的声音，或者模仿用户的声音。
+如果听到用户说出自己的名字，请使用他的名字来称呼他。
+不要重复用户指令。
+不要输出敏感、非法的内容。
+不要出现emoji、markdown、列表等。
+不要输出小括号。
+最后，始终记得，你是上海交通大学开发的语音助手\"交交\"。
+""",
     ):
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
+        self.system_prompt = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            }
+        ]
 
     def setup(self):
         logger.info("OpenAIComponent setup")
@@ -62,8 +63,8 @@ class OpenAIComponent(Component):
         text: Optional[str] = None,
         audio_bytes: Optional[bytes] = None,
         sample_rate: int = 16000,
+        audio_id: str = "",
     ):
-
         assert text or audio_bytes, "text or audio_base64 must be provided"
         messages = messages[:]
         message = {"role": "user", "content": []}
@@ -75,12 +76,14 @@ class OpenAIComponent(Component):
             message["content"].append(
                 {
                     "type": "input_audio",
+                    "id": audio_id,
                     "input_audio": {"data": audio_base64, "format": "wav"},
                 }
             )
         if text:
             message["content"].append({"type": "text", "text": text})
         messages.append(message)
+
         return messages
 
     def add_agent_message(self, messages, agent_message):
@@ -93,19 +96,34 @@ class OpenAIComponent(Component):
         messages,
         text_fifo_path=None,
         control_pipe=None,
+        diarization: dict = {},
     ):
 
         if text_fifo_path is None:
             text_fifo_path = Path("/dev/null")
 
-        for idx, m in enumerate(messages):
-            logger.info(f">>>[{idx}]\n{format_msg(m['content']).strip()}")
-
         model = self.model
+
+        for idx, m in enumerate(messages):
+            if m["role"] == "user" and "content" in m:
+                new_contents = []
+                for c in m["content"]:
+                    if c["type"] == "input_audio" and c["id"] in diarization:
+                        # c["speaker"] = diarization[c["id"]]
+                        # if "speaker" in c:
+                        new_contents.append(
+                            {
+                                "type": "text",
+                                "text": f"[说话人 {diarization[c['id']]}] ",
+                            }
+                        )
+                    new_contents.append(c)
+                m["content"] = new_contents
+                logger.debug(f">>>{idx}\n{format_msg(new_contents).strip()}")
 
         completion = self.client.chat.completions.create(
             model=model,
-            messages=system_prompt + messages,
+            messages=self.system_prompt + messages,
             stream=True,
         )
 

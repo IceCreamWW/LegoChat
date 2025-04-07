@@ -116,7 +116,7 @@
         position: absolute;
         display: block;
         text-align: center;
-        top: 76dvh;
+        top: 79dvh;
         z-index: 10;
         color: rgba(0,0,0,0.6);
         font-size: 1.5rem;
@@ -231,6 +231,8 @@
 <body>
   <div class="chat-container relative mx-auto w-100 h-100 max-w-full overflow-hidden bg-gradient-to-br from-[--color-a] via-[--color-b] to-[--color-c] text-white duration-500 ease-in [transition-property:_--color-a,_--color-b,_--color-c] before:absolute before:left-[20%] before:top-[10%] before:h-[50%] before:w-[70%] before:origin-[60%] before:animate-blob before:bg-gradient-to-br before:from-[--color-a] before:to-[--color-b] before:blur-[50px] before:brightness-125 after:absolute after:left-[40%] after:top-[30%] after:h-[80%] after:w-[70%] after:origin-[60%] after:animate-blob-reverse after:bg-gradient-to-br after:from-[--color-a] after:to-[--color-b] after:blur-[50px] after:brightness-125" style="--color-a: rgb(51, 153, 255, 0.3); --color-b: rgb(244, 229, 77, 0.3); --color-c: rgb(255, 170, 51, 0.3)">
     <!-- Transcript section -->
+    <div class="logo" id="logo"> <img src="./{{ url_for('static', filename='logo.png') }}"/> </div>
+
     <div class="transcript" id="transcript">
       <p><strong>User:</strong> Hello!</p>
       <p><strong>Agent:</strong> Hi there, how can I help?</p>

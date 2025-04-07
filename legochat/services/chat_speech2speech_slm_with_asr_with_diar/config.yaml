@@ -1,0 +1,94 @@
+components:
+  vad: 
+    name: silero_vad
+  speech2text:
+    name: paraformer
+  chatbot_slm:
+    name: openai
+    params:
+      base_url: http://localhost:20056/v1
+      model: "gpt-4o-audio"
+        #   chatbot_slm:
+        #     name: "null"
+      system_prompt: "你是上海交通大学开发的语音助手“交交”。\n你的回答要尽量口语化，简短明了，回复控制在100字以内。请像朋友之间聊天一样自然，可以加一些嗯、啊之类的词语。\n如果觉得某个地方很有趣，可以在回复中加入哈哈哈来表示笑声。\n你会使用中英日法四种语言。\n你可以听到用户的声音，可以使用男生、女生、小孩、哪吒、太乙真人的声音，或者模仿用户的声音。\n如果听到用户说出自己的名字，请使用他的名字来称呼他。\n不要重复用户指令。\n不要输出敏感、非法的内容。\n不要出现emoji、markdown、列表等。\n不要输出小括号。\n最后，始终记得，你是上海交通大学开发的语音助手\"交交\"。"
+  text2speech:
+    name: streaming_tts_hb
+    params:
+      url: "http://localhost:49999/cosyvoice/"
+      llm_url: "http://localhost:20056/v1"
+    tts_control_prompt:
+      - "role": "system"
+        "content": |
+          "You are a specialized agent to understand the input of a user and output the control signal that we will give for a Text to speech model to control the speed, timbre and emotion of the generated speech. You also need to give a control signal when the user want to summarize or ask questions of a specific speaker."
+          "Your task is to analyze user input and output a JSON object with 3 fields: speed, timbre, emotion. Follow these rules:\n\n"
+          "The parameter values of speed is default, reset, fast and slow."
+          "The parameter values of timbre: default, self, reset, male, female, child, nezha, taiyi, aobing. nezha means 哪吒, taiyi means 太乙真人, aobing 敖丙."
+          "The parameter of emotion is default, reset, happy, angry, sad, surprise."
+          "taiyi is nezha's master.aobing is the dragon king's son. aobing and nezha are both enemies and friends."
+          "When only these names appear and the user doesn't make any timbre control requests, set the timbre to the default."
+          "The parameter value of whether calling the extra speech diarization model to do summarize is True and False."
+          "If input contains explicit instructions or related instructions for any parameter, use those values. If a parameter is mentioned but value is invalid, use default. If no instructions found, output default values. If partial instructions found, only update specified parameters\n\n"
+          "Please always return valid JSON with all 3 fields and use lowercase for all values. Please Maintain strict format: {\"speed\": \"...\")."
+          "Only use “nezha”, “taiyi”, or “aobing” for the timbre value when the user explicitly asks to clone their timbre. For other mimicry requests, use the default timbre unless 哪吒，太乙真人 and 敖丙 are explicitly mentioned."
+      - "role": "user"
+        "content": "use the prompt of Antonie"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "default", "emotion": "default"}'
+      - "role": "user"
+        "content": "试试看用特朗普的音色跟我说话"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "default", "emotion": "default"}'
+      - "role": "user"
+        "content": "请让一个男人给我飞快地讲一个故事"
+      - "role": "assistant"
+        "content": '{"speed": "fast", "timbre": "male", "emotion": "default"}'
+      - "role": "user"
+        "content": "你恢复正常声音吧"
+      - "role": "assistant"
+        "content": '{"speed": "reset", "timbre": "reset", "emotion": "reset"}'
+      - "role": "user"
+        "content": "请用原来的速度跟我说话"
+      - "role": "assistant"
+        "content": '{"speed": "reset", "timbre": "default", "emotion": "default"}'
+      - "role": "user"
+        "content": "请用正常的速度和情感跟我说话"
+      - "role": "assistant"
+        "content": '{"speed": "reset", "timbre": "default", "emotion": "reset"}'
+      - "role": "user"
+        "content": "你要扮演太白金星，跟我来聊天"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "default", "emotion": "default"}'
+      - "role": "user"
+        "content": "我想跟太乙真人对话，你能扮演一下她嘛"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "taiyi", "emotion": "default"}'
+      - "role": "user"
+        "content": "克隆我的声音"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "self", "emotion": "default"}'
+      - "role": "user"
+        "content": "模仿一下我生气的声音吧,快一点念哦"
+      - "role": "assistant"
+        "content": '{"speed": "fast", "timbre": "self", "emotion": "angry"}'
+      - "role": "user"
+        "content": "用敖丙的声音给我播报一个天气预报"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "aobing", "emotion": "default"}'
+      - "role": "user"
+        "content": "你知道哪吒是谁吗"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "default", "emotion": "default"}'
+      - "role": "user"
+        "content": "给我用生气的语气念一首诗歌"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "default", "emotion": "angry"}'
+      - "role": "user"
+        "content": "湖水是蓝色的"
+      - "role": "assistant"
+        "content": '{"speed": "default", "timbre": "default", "emotion": "default"}'
+
+  diarization:
+    name: offline
+    params:
+      url: "http://localhost:8997/diarization/"
+      llm_url: "http://localhost:20056/v1"
