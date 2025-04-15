@@ -27,9 +27,9 @@ SPEECH2TEXT_MIN_INTERVAL_SECONDS = float(
     os.getenv("SPEECH2TEXT_MIN_INTERVAL_SECONDS", "0.2")
 )
 VOICED_SECONDS_TO_INTERRUPT = float(os.getenv("VOICED_SECONDS_TO_INTERRUPT", "0.3"))
-UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.6"))
+UNVOICED_SECONDS_TO_EOT = float(os.getenv("UNVOICED_SECONDS_TO_EOT", "0.4"))
 CHATBOT_MAX_MESSAGES = int(os.getenv("CHATBOT_MAX_MESSAGES", "20"))
-VAD_LEFT_SILENCE_SECONDS = 0.5
+VAD_LEFT_SILENCE_SECONDS = 0.35
 
 
 class ChatSpeech2Speech(Service):
@@ -176,6 +176,7 @@ class ChatSpeech2SpeechSession:
         if self.agent_can_speak:
             return
 
+        logger.info(f"transcript: {self.transcript}")
         await self.transcribe(end_of_stream=True)
         self.speech2text_states = {"session_id": self.session_id}
         transcript = self.transcript
@@ -186,7 +187,7 @@ class ChatSpeech2SpeechSession:
         self.clear_transcript()
         self.agent_audio_output_stream.reset()
         self.agent_can_speak = True
-        logger.debug(f"agent start speaking")
+        logger.info(f"EOT detected")
         asyncio.create_task(self.agent_speak(speech, transcript))
 
     async def detect_speech(self):
@@ -209,8 +210,11 @@ class ChatSpeech2SpeechSession:
                     self.voiced_segments.pop()
                 self.voiced_segments.append(
                     {
-                        "start": result["start"] * 2
-                        - int(VAD_LEFT_SILENCE_SECONDS * 16000 * 2),
+                        "start": max(
+                            0,
+                            result["start"] * 2
+                            - int(VAD_LEFT_SILENCE_SECONDS * 16000 * 2),
+                        ),
                         "eos": False,
                     }
                 )
@@ -291,7 +295,6 @@ class ChatSpeech2SpeechSession:
         )
         logger.debug(f"text from {start} to {end}: {text}")
         self.update_transcript(start, end + end_of_stream, text)
-        logger.info(f"transcript: {self.transcript}")
 
     @property
     def transcript(self):

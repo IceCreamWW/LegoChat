@@ -199,6 +199,7 @@ class StreamingTTSHBComponent(Component):
             for chunk in response.iter_content(chunk_size=4096):
                 if chunk:
                     yield chunk
+                    logger.info("Streaming TTS chunk sent")
 
     def process_func(
         self, text_fifo_path, audio_fifo_path, control_pipe=None, control_params=None
@@ -206,10 +207,13 @@ class StreamingTTSHBComponent(Component):
         messages = self.tts_control_prompt + [
             {"role": "user", "content": control_params["transcript"]}
         ]
+        logger.info(f"Requesting TTS Control Parameters")
         completion = self.client.chat.completions.create(
             model="gpt-4o-audio",
             messages=messages,
         )
+        logger.info(f"Requested TTS Control Parameters")
+
         try:
             llm_control_params = json.loads(
                 repair_json(completion.choices[0].message.content)
@@ -221,14 +225,16 @@ class StreamingTTSHBComponent(Component):
                 "emotion": "default",
                 "voice": "default",
             }
+        # llm_control_params["voice"] = "default"
 
         logger.debug(llm_control_params)
         control_params.update(llm_control_params)
         control_params["response_id"] = str(uuid4())
-        response = requests.post(
-            f"http://localhost:{PORT}/{control_params['session_id']}/set_agent_speaker",
-            json={"agent_speaker": control_params["voice"]},
-        )
+        if control_params["voice"] != "default":
+            response = requests.post(
+                f"http://localhost:{PORT}/{control_params['session_id']}/set_agent_speaker",
+                json={"agent_speaker": control_params["voice"]},
+            )
 
         text = ""
         with open(text_fifo_path, "r", encoding="u8") as fifo_text, open(

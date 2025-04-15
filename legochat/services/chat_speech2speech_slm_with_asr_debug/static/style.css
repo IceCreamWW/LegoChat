@@ -60,6 +60,7 @@ body {
     justify-content: center;
     align-items: center;
     cursor: pointer;
+    z-index: 20;
 }
 /* Red hangup button */
 .hangup-btn {

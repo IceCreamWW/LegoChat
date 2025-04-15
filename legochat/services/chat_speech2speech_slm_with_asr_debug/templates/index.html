@@ -6,7 +6,7 @@
   <title>Voice Chat App with Microphone Waveform Animation</title>
   <!-- Bootstrap CSS -->
   <link rel="stylesheet" href="./{{ url_for('static', filename='bootstrap.min.css') }}">
-  <link rel="stylesheet" href="./{{ url_for('static', filename='all.min.css') }}">
+  <link rel="stylesheet" href="./{{ url_for('static', filename='font-awesome/css/all.min.css') }}">
   <link rel="stylesheet" href="./{{ url_for('static', filename='bg.css') }}">
   <link rel="stylesheet" href="./{{ url_for('static', filename='style.css') }}">
 </head>
@@ -58,22 +58,20 @@
   </div>
 
   <!-- jQuery and Bootstrap JS (for simplicity) -->
-  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="./{{url_for('static', filename='jquery-3.5.1.min.js')}}"></script>
   <script src="./{{url_for('static', filename='bootstrap.min.js')}}"></script>
   <!-- Include hls.js via CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="./{{url_for('static', filename='hls.js')}}"></script>
   <script>
-    let analyser;
-    let dataArray;
     let microphoneStream;
     let animationFrameId;
     let sessionId = '';
-    let audioContext, mediaStream, audioSource, processor, agentAudio;
+    let audioContext, mediaStream, audioSource, processor;
     let agentCanSpeak = false;
     let isSessionStarted = false;
     let isListening = true;
-    let pollingActive = true;
-    let agentSpekaer = "default";
+    let agentSpeaker = "default";
+    let connectionIsAlive = 10;
     let speaker2avatar = {
       "default": "./{{url_for('static', filename='agent_avatar/default.png')}}",
       "female": "./{{url_for('static', filename='agent_avatar/female.png')}}",
@@ -81,9 +79,10 @@
       "nezha": "./{{url_for('static', filename='agent_avatar/nezha.png')}}",
       "taiyi": "./{{url_for('static', filename='agent_avatar/taiyi.png')}}",
       "aobing": "./{{url_for('static', filename='agent_avatar/aobing.png')}}",
+      "child": "./{{url_for('static', filename='agent_avatar/child.png')}}",
       "self": "./{{url_for('static', filename='agent_avatar/logo.png')}}",
     }
-
+    let agentAudio, hls;
     class AudioVisualizer {
       constructor(audioContext, processFrame, processError, stream) {
         this.audioContext = audioContext;
@@ -123,6 +122,12 @@
     }
 
     $(document).ready(function() {
+      agentAudio = new Audio();;
+      agentAudio.loop = false;
+      agentAudio.addEventListener('ended', async () => {
+        await fetch(`./${sessionId}/agent_finished_speaking`, { method: 'POST' });
+      });
+
       // Toggle transcript display when the transcript icon is clicked
       $('#transcriptToggle').click(function() {
         $('#transcript').toggle();
@@ -134,17 +139,11 @@
         $('#chatControls').removeClass('d-none');
         startSession();
       });
-
       // On hangup button click: stop microphone capture and reset UI
-      $('#hangupBtn').click(function() {
-        if (agentAudio) {
-          agentAudio.pause();
-          agentCanSpeak = false;
-        }
-
+      $('#hangupBtn').click(async function() {
+        agentAudio.pause()
         $('#chatControls').addClass('d-none');
         $('#idleControls').removeClass('d-none');
-        // Reset UI elements
         $('#agentCircle').css('transform', 'scale(.9)');
         stopSession();
       });
@@ -163,28 +162,6 @@
       });
     });
 
-    // Start capturing microphone audio
-    function startAudio() {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-          .then(function(stream) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            microphoneStream = stream;
-            const source = audioContext.createMediaStreamSource(stream);
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            dataArray = new Uint8Array(analyser.frequencyBinCount);
-            updateAnimation();
-          })
-          .catch(function(err) {
-            console.error("Error accessing microphone: " + err);
-          });
-      } else {
-        alert("getUserMedia not supported in this browser.");
-      }
-    }
-
     // Stop capturing audio and cancel the animation loop
     function stopAudio() {
       if (microphoneStream) {
@@ -193,7 +170,6 @@
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
-      analyser = null;
     }
 
     async function stopSession() {
@@ -203,7 +179,6 @@
           audioSource.disconnect(processor);
           processor.disconnect();
       }
-      analyser = null;
     }
 
     async function startSession() {
@@ -225,8 +200,6 @@
 
         await initializeAudio();
         visualizeMicrophone();
-        // visualizeAgent(audioContext, mediaStream);
-        pollTranscript();
     }
 
 
@@ -242,7 +215,11 @@
         for (i = 0; i < visualValueCount; ++i) {
           const value = Math.min(3, values[dataMap[i]] / 255 * 5 + 1);
           const elmStyles = visualElements[i].style;
-          elmStyles.transform = `scaleY( ${value} )`;
+          if (!$('#micToggleBtn').hasClass("muted")) {
+            elmStyles.transform = `scaleY( ${value} )`;
+          } else {
+            elmStyles.transform = `scaleY( 1 )`;
+          }
           // elmStyles.opacity = Math.max(.25, value);
         }
       };
@@ -260,7 +237,7 @@
     const init = () => {
       const processFrame = data => {
         const elmStyles = visualElement.style;
-        if (!agentCanSpeak) {
+        if (!agentCanSpeak || !isSessionStarted) {
           elmStyles.transform = "scale(0.9)";
           return;
         };
@@ -300,154 +277,117 @@
 
         // Function to send audio data without blocking
         async function sendAudioData() {
-            while (audioQueue.length > 0) {
-                const data = audioQueue.shift();
-                try {
-                    await fetch(`./${sessionId}/user_audio`, {
-                        method: 'POST',
-                        body: data
-                    });
-                } catch (error) {
-                    console.error('Error sending audio data:', error);
+          if (!connectionIsAlive) return;
+          while (audioQueue.length > 0) {
+              const data = audioQueue.shift();
+              try {
+                  response = await fetch(`./${sessionId}/user_audio`, {
+                      method: 'POST',
+                      body: data
+                  });
+                  if (!response.ok) {
+                      throw new Error('Network response was not ok');
+                  }
+                  let {transcript, total_sessions, agent_speaker, agent_can_speak} = await response.json();
+                  await agentSpeakerHandler(agent_speaker);
+                  await agentCanSpeakHandler(agent_can_speak);
+                  connectionIsAlive = 10;
+              } catch (error) {
+                connectionIsAlive -= 1;
+                if (connectionIsAlive <= 0) {
+                  showLostConnectionOverlay();
+                }
+              }
+          }
+        }
+
+        async function agentSpeakerHandler(agent_speaker) {
+            if (agent_speaker !== agentSpeaker) {
+                agentSpeaker = agent_speaker;
+                const avatarSrc = speaker2avatar[agent_speaker];
+                if (avatarSrc) {
+                    $('#agentAvatar').attr('src', avatarSrc);
+                } else {
+                    console.error(`No avatar found for speaker: ${agent_speaker}`);
                 }
             }
         }
 
+        async function agentCanSpeakHandler(agent_can_speak) {
+          if (agent_can_speak && !agentCanSpeak) {
+              const m3u8Url = `./${sessionId}/assets/agent.m3u8?time=${Date.now()}`;
+              if (Hls.isSupported()) {
+                  if (hls) {
+                      hls.destroy();
+                  }
+                  hls = new Hls({ startPosition: 0 });
+                  hls.loadSource(m3u8Url);
+                  hls.attachMedia(agentAudio);
+                  hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                    agentAudio.currentTime = 0;
+                    const agentMeidaStream = agentAudio.captureStream();
+                    visualizeAgent(audioContext, agentMeidaStream);
+                    agentAudio.play();
+                  });
+              } else if (agentAudio.canPlayType('application/vnd.apple.mpegurl')) {
+                  agentAudio.src = m3u8Url;
+                  agentAudio.play();
+              } else {
+                  console.error('This browser does not support HLS.');
+              }
+          } else if (!agent_can_speak && agentCanSpeak) {
+              if (hls) {
+                  hls.destroy();
+                  hls = null;
+              }
+              agentAudio.pause();
+              agentAudio.currentTime = 0;
+              agentAudio.src = '';
+          }
+
+          agentCanSpeak = agent_can_speak;
+
+          if (agentCanSpeak) {
+              $("#statusText").html("Speaking");
+          } else {
+            if (!$('#micToggleBtn').hasClass("muted")) {
+              $("#statusText").html("Listening");
+            } else {
+              $("#statusText").html("Muted");
+            }
+          }
+        }
+
         // Processor callback for audio data
         processor.onaudioprocess = function(event) {
-            if (!isListening) return; // Do nothing if not listening
-
+          let binaryData;
+          if (!isListening) {
+            const silence = new Int16Array(1024);
+            binaryData = new Uint8Array(silence.buffer);
+          } else {
             const audioData = event.inputBuffer.getChannelData(0);
             const int16Data = new Int16Array(audioData.length);
             for (let i = 0; i < audioData.length; i++) {
                 int16Data[i] = audioData[i] * 32767;
             }
-            const binaryData = new Uint8Array(int16Data.buffer);
+            binaryData = new Uint8Array(int16Data.buffer);
+          }
 
-            // Add data to queue
-            audioQueue.push(binaryData);
-
-            // Process audio data asynchronously
-            if (!isProcessing) {
-                isProcessing = true;
-                sendAudioData().finally(() => {
-                    isProcessing = false;
-                });
-            }
+          audioQueue.push(binaryData);
+          if (!isProcessing) {
+              isProcessing = true;
+              sendAudioData().finally(() => {
+                  isProcessing = false;
+              });
+          }
         };
 
         processor.connect(audioContext.destination); // Connect to avoid garbage collection
-        // Start polling for agent's ability to speak
-        pollAgentCanSpeak();
     }
     async function pollAgentCanSpeak() {
-        let audio = new Audio();
-        agentAudio = audio;
-        audio.loop = false;
-        let hls;
-
-        audio.addEventListener('ended', async () => {
-            await fetch(`./${sessionId}/agent_finished_speaking`, { method: 'POST' });
-        });
 
         const intervalId = setInterval(async () => {
-            if (!pollingActive) {
-                clearInterval(intervalId);
-                return;
-            }
-
-            try {
-                const response = await fetch(`./${sessionId}/agent_can_speak`);
-                if (!response.ok) throw new Error('Network response was not ok');
-                let { agent_can_speak } = await response.json();
-
-                if (agent_can_speak && !agentCanSpeak) {
-                    const m3u8Url = `./${sessionId}/assets/agent.m3u8?time=${Date.now()}`;
-                    if (Hls.isSupported()) {
-                        if (hls) {
-                            hls.destroy();
-                        }
-                        hls = new Hls({ startPosition: 0 });
-                        hls.loadSource(m3u8Url);
-                        hls.attachMedia(audio);
-                        hls.on(Hls.Events.MANIFEST_PARSED, function () {
-                            const agentMeidaStream = audio.captureStream();
-                            visualizeAgent(audioContext, agentMeidaStream);
-                            audio.currentTime = 0;
-                            audio.play();
-                        });
-                    } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
-                        audio.src = m3u8Url;
-                        audio.play();
-                    } else {
-                        console.error('This browser does not support HLS.');
-                    }
-                } else if (!agent_can_speak && agentCanSpeak) {
-                    if (hls) {
-                        hls.destroy();
-                        hls = null;
-                    }
-                    audio.pause();
-                    audio.currentTime = 0;
-                    audio.src = '';
-                }
-
-                agentCanSpeak = agent_can_speak;
-
-                if (!$('#micToggleBtn').hasClass("muted")) {
-                  if (agentCanSpeak) {
-                      $("#statusText").html("Speaking");
-                  } else {
-                      $("#statusText").html("Listening");
-                  }
-                }
-            } catch (error) {
-                console.error('Error fetching agent_can_speak:', error);
-                pollingActive = false;
-                showLostConnectionOverlay();
-            }
-
-            try {
-                const response = await fetch(`./${sessionId}/agent_speaker`);
-                if (!response.ok) throw new Error('Network response was not ok');
-                let { agent_speaker } = await response.json();
-                if (agent_speaker !== agentSpekaer) {
-                    agentSpekaer = agent_speaker;
-                    const avatarSrc = speaker2avatar[agent_speaker];
-                    if (avatarSrc) {
-                        $('#agentAvatar').attr('src', avatarSrc);
-                    } else {
-                        console.error(`No avatar found for speaker: ${agent_speaker}`);
-                    }
-                  console.log(agent_speaker);
-                }
-            } catch (error) {
-                console.error('Error fetching transcript:', error);
-                pollingActive = false;
-                showLostConnectionOverlay();
-            }
         }, 100);
-    }
-
-
-    async function pollTranscript() {
-        const intervalId = setInterval(async () => {
-            if (!pollingActive) {
-                clearInterval(intervalId);
-                return;
-            }
-
-            try {
-                const response = await fetch(`./${sessionId}/transcript`);
-                if (!response.ok) throw new Error('Network response was not ok');
-                const transcript = await response.json();
-                console.log(transcript);
-            } catch (error) {
-                console.error('Error fetching transcript:', error);
-                pollingActive = false;
-                showLostConnectionOverlay();
-            }
-        }, 1000);
     }
 
     async function showLostConnectionOverlay() {
@@ -460,6 +400,3 @@
 
   </script>
 </body>
-
-
-

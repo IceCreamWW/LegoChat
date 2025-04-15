@@ -35,6 +35,11 @@ class ParaformerComponent(Component):
         start = time.time()
         # assert (states is None), "Paraformer stateful processing is not supported yet"
         samples = np.frombuffer(samples, dtype=np.int16)
+
+        # too short samples cause hallucination
+        if len(samples) < 512:
+            return "", None
+
         result = self.speech2text_model(samples)
         if not result or not result[0]["preds"]:
             return "", None

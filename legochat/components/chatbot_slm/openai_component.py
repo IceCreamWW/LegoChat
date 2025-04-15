@@ -30,17 +30,45 @@ system_prompt = [
 """,
     }
 ]
+system_prompt = [
+    {
+        "role": "system",
+        "content": """
+你是上海交通大学开发的语音助手\"交交\",你可以规划行程、回答问题、辅导学习等。
+你的回答要尽量口语化，简短明了，回复控制在100字以内。请像朋友之间聊天一样自然，不要出现emoji、markdown、列表等。
+你会使用中英日法四种语言。
+你可以听到用户的声音。
+不要重复用户指令。
+不要输出敏感、非法的内容。
+不要输出括号。
+最后，始终记得，你是上海交通大学开发的语音助手\"交交\"。
+""",
+    }
+]
+
+# system_prompt = [
+#     {
+#         "role": "system",
+#         "content": """
+#         你是一个灵活的角色扮演助手，用户会在对话中指定你的身份。无论是什么身份，你都要努力完成用户给的任务。
+#         回答要简洁、口语化，少说废话，避免复杂表达。在用户指定身份后，完全忠于角色设定，保持自然流畅，不要透露自己是 AI。如果用户要求跳出角色或切换身份，礼貌拒绝并继续扮演当前角色。
+#         现在，请根据用户指令开始角色扮演。
+# """,
+#     }
+# ]
+
 
 def format_msg(content):
     fmt = ""
     for c in content:
         if "input_audio" in c:
-            id = c.get('id', "")
+            id = c.get("id", "")
             fmt += f"[audio] {id} "
         else:
             fmt += c.__repr__() + " "
-    
+
     return fmt
+
 
 @register_component("chatbot_slm", "openai")
 class OpenAIComponent(Component):
@@ -97,6 +125,8 @@ class OpenAIComponent(Component):
 
         if text_fifo_path is None:
             text_fifo_path = Path("/dev/null")
+
+        messages = messages[-2:]
 
         for idx, m in enumerate(messages):
             logger.info(f">>>[{idx}]\n{format_msg(m['content']).strip()}")

@@ -9,7 +9,7 @@ os.environ["PORT"] = str(PORT)
 
 logging.getLogger("werkzeug").setLevel(logging.WARNING)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     level=logging.INFO,
 )
@@ -104,12 +104,6 @@ def agent_can_speak(session_id):
     return jsonify({"agent_can_speak": can_speak})
 
 
-@app.route("/<session_id>/agent_speaker")
-def agnet_speaker(session_id):
-    agent_speaker = service.sessions.get(session_id).agent_speaker
-    return jsonify({"agent_speaker": agent_speaker})
-
-
 @app.route("/<session_id>/set_agent_speaker", methods=["POST"])
 def set_agnet_speaker(session_id):
     args = request.json
@@ -134,16 +128,9 @@ def get_session_file(session_id, filename):
     directory = service.sessions[session_id].workspace.absolute()
     target = directory / filename
     while not target.exists():
-        time.sleep(0.2)
-    logger.debug(f"Sending {directory / filename}")
+        time.sleep(0.1)
+    logger.info(f"Sending {directory / filename}")
     return send_from_directory(directory, filename)
-
-
-@app.route("/<session_id>/transcript")
-def transcript(session_id):
-    service.sessions[session_id].is_alive = True
-    transcript = service.sessions[session_id].transcript
-    return jsonify(transcript)
 
 
 @app.route("/<session_id>/chat_message")
@@ -167,14 +154,21 @@ def chat_message(session_id):
 
 @app.route("/<session_id>/user_audio", methods=["POST"])
 async def user_audio(session_id):
+    service.sessions[session_id].is_alive = True
     data = request.data
     await service.sessions[session_id].user_audio_input_stream.write(data)
-    return "OK", 200
 
+    transcript = service.sessions[session_id].transcript
+    total_sessions = len(service.sessions)
 
-@app.route("/total_sessions")
-async def total_sessions():
-    return jsonify({"total_sessions": len(service.sessions)})
+    response = {
+        "transcript": transcript,
+        "total_sessions": total_sessions,
+        "agent_speaker": service.sessions[session_id].agent_speaker,
+        "agent_can_speak": service.sessions[session_id].agent_can_speak,
+    }
+
+    return jsonify(response)
 
 
 @app.route("/<session_id>/interrupt", methods=["POST"])
@@ -196,12 +190,6 @@ async def end_of_turn(session_id):
         background_loop,
     )
     return "End of Turn Noted", 200
-
-
-@app.route("/<session_id>/test")
-async def test(session_id):
-    await service.sessions[session_id].agent_audio_output_stream.write(8192 * b"\x00")
-    return "OK"
 
 
 if __name__ == "__main__":
